@@ -35,15 +35,15 @@ models:
 # Overall score  = average of all category scores.
 categories:
   coding:
-    benchmarks: [bigcodebench_hard, humanevalplus, mbppplus]
+    benchmarks: [bigcodebench_hard, humanevalplus, mbppplus, scicode]
   science:
     benchmarks: [gpqa, scibench]
   math:
     benchmarks: [aime, math_500]
   knowledge:
-    benchmarks: [mmlu_pro]
+    benchmarks: [mmlu_pro, hle]
   instruction:
-    benchmarks: [ifeval]
+    benchmarks: [ifeval, tau_bench]
 
 benchmarks:
   bigcodebench_hard:
@@ -89,6 +89,21 @@ benchmarks:
   ifeval:
     enabled: true
     dataset: google/IFEval
+    split: train
+    num_samples: 50
+  scicode:
+    enabled: true
+    dataset: SciCode1/SciCode
+    split: test
+    num_samples: 50
+  hle:
+    enabled: true
+    dataset: cais/hle
+    split: test
+    num_samples: 50
+  tau_bench:
+    enabled: true
+    dataset: amityco/tau-bench-retail-train-next-action
     split: train
     num_samples: 50
 

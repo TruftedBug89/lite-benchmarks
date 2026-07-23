@@ -72,7 +72,7 @@ def _benchmark_scores(model_results: dict) -> dict[str, float]:
 
 
 def run_benchmarks(
-    config: Config, model_filter: list[str] | None, bench_filter: list[str] | None, existing_results: dict | None = None, quant: str | None = None
+    config: Config, model_filter: list[str] | None, bench_filter: list[str] | None, existing_results: dict | None = None, quant: str | None = None, thinking: str | None = None
 ) -> dict:
     if existing_results is None:
         existing_results = {}
@@ -84,9 +84,12 @@ def run_benchmarks(
             name = f"{base_name} ({quant})" if quant else base_name
             
             if match:
-                models.append(replace(match, name=name))
+                if thinking:
+                    models.append(replace(match, name=name, thinking_effort=thinking))
+                else:
+                    models.append(replace(match, name=name))
             else:
-                models.append(ModelConfig(id=mid, name=name))
+                models.append(ModelConfig(id=mid, name=name, thinking_effort=thinking))
     else:
         models = []
         for m in config.models:
@@ -184,6 +187,7 @@ def run_benchmarks(
                                     "question_index": qi,
                                     "status": "error",
                                     "error_type": type(error).__name__,
+                                    "error_msg": str(error),
                                 }
                             )
                         progress.advance(task)
@@ -191,8 +195,12 @@ def run_benchmarks(
             question_details.sort(key=lambda x: x["question_index"])
 
             if scored == 0:
+                first_err = next(
+                    (d.get("error_msg") for d in question_details if d.get("status") == "error"),
+                    "Unknown error"
+                )
                 console.print(
-                    f"  [yellow]{bench.display_name}: no successful responses; omitted.[/yellow]"
+                    f"  [yellow]{bench.display_name}: no successful responses; omitted. Reason: {first_err}[/yellow]"
                 )
                 continue
 
@@ -350,6 +358,10 @@ def main():
         "--quant", 
         help="Quantization info for local models (e.g. Q4_K_M), appended to model name"
     )
+    parser.add_argument(
+        "--thinking",
+        help="Set reasoning effort dynamically (e.g., max, high, low) for all models run"
+    )
     parser.add_argument("--list", action="store_true", help="List configured models and benchmarks")
     parser.add_argument(
         "--unsafe",
@@ -390,7 +402,7 @@ def main():
         existing_results = load_latest_results(config) or {}
         if not config.models and not args.models:
             parser.error("No models are configured. Add one to config.yaml or pass --models.")
-        results = run_benchmarks(config, args.models, args.benchmarks, existing_results, args.quant)
+        results = run_benchmarks(config, args.models, args.benchmarks, existing_results, args.quant, args.thinking)
         path = save_results(results, config)
         console.print(f"\n[dim]Results saved to {path}[/dim]")
 

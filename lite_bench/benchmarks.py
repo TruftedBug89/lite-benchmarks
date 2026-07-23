@@ -485,6 +485,140 @@ class MATH500Benchmark(BenchmarkBase):
 
 
 # ---------------------------------------------------------------------------
+# Humanity's Last Exam (HLE) — extreme multi-disciplinary benchmark
+# ---------------------------------------------------------------------------
+
+
+class HLEBenchmark(BenchmarkBase):
+    name = "hle"
+    display_name = "Humanity's Last Exam"
+
+    def format_prompt(self, q: dict) -> str:
+        question = q.get("question", "")
+        return (
+            "Solve the following question from Humanity's Last Exam step-by-step.\n"
+            "End your response with '\\boxed{<answer>}' containing your final concise answer.\n\n"
+            f"Question: {question}"
+        )
+
+    def evaluate(self, q: dict, response: str) -> float:
+        gold = str(q.get("answer", "")).strip()
+        if not gold:
+            return 0.0
+
+        pred_boxed = _extract_boxed(response)
+        if pred_boxed and pred_boxed.strip().lower() == gold.lower():
+            return 1.0
+
+        if len(gold) == 1 and gold.upper() in {"A", "B", "C", "D", "E", "F", "G", "H", "I", "J"}:
+            pred_letter = _extract_letter(response, set("ABCDEFGHIJ"))
+            if pred_letter == gold.upper():
+                return 1.0
+
+        gold_num = _extract_number(gold)
+        pred_num = _extract_number(pred_boxed) if pred_boxed else _extract_number(response)
+        if gold_num is not None and pred_num is not None:
+            try:
+                if float(gold_num) == float(pred_num):
+                    return 1.0
+            except ValueError:
+                pass
+
+        if gold.lower() in response.lower():
+            return 1.0
+
+        return 0.0
+
+
+# ---------------------------------------------------------------------------
+# SciCode — scientific Python programming problem solving
+# ---------------------------------------------------------------------------
+
+
+class SciCodeBenchmark(BenchmarkBase):
+    name = "scicode"
+    display_name = "SciCode"
+    requires_code_execution = True
+
+    def format_prompt(self, q: dict) -> str:
+        desc = q.get("problem_description_main") or q.get("prompt", "")
+        deps = q.get("required_dependencies", "")
+        return (
+            "Write a Python script to solve the following scientific problem.\n"
+            "Return ONLY the complete Python code (including imports). "
+            "No explanations, no markdown code blocks.\n\n"
+            f"{deps}\n\n"
+            f"{desc}"
+        )
+
+    def evaluate(self, q: dict, response: str) -> float:
+        code = _strip_code_blocks(response)
+        deps = q.get("required_dependencies", "")
+        tests = q.get("general_tests", "")
+        if isinstance(tests, list):
+            tests_str = "\n\n".join(tests)
+        else:
+            tests_str = str(tests)
+
+        parts = [p for p in [deps, code, tests_str] if p.strip()]
+        full = "\n\n".join(parts)
+        return 1.0 if _execute_code(full, self.settings.code_exec_timeout) else 0.0
+
+
+# ---------------------------------------------------------------------------
+# Tau-Bench — agentic tool use and multi-turn workflow
+# ---------------------------------------------------------------------------
+
+
+class TauBenchBenchmark(BenchmarkBase):
+    name = "tau_bench"
+    display_name = "Tau-Bench (Banking)"
+
+    def format_prompt(self, q: dict) -> str:
+        convs = q.get("conversations", [])
+        formatted = []
+        for turn in convs:
+            role = str(turn.get("role", ""))
+            content = turn.get("content")
+            tool_calls = turn.get("tool_calls")
+            if content:
+                formatted.append(f"{role.capitalize()}: {content}")
+            elif tool_calls:
+                formatted.append(f"Assistant (Tool Call): {tool_calls}")
+
+        prompt_text = "\n\n".join(formatted)
+        return (
+            "You are an AI assistant in a multi-turn customer service environment.\n"
+            "Based on the conversation history below, output the next required tool call or response.\n"
+            "If calling a tool, reply with JSON format: {\"name\": \"<tool_name>\", \"arguments\": {<args>}}.\n\n"
+            f"Conversation History:\n{prompt_text}\n\n"
+            "Next Action:"
+        )
+
+    def evaluate(self, q: dict, response: str) -> float:
+        gold_answers = q.get("answer", [])
+        if not gold_answers or not isinstance(gold_answers, list):
+            return 0.0
+
+        first_ans = gold_answers[0]
+        if not isinstance(first_ans, dict):
+            return 0.0
+
+        gold_tool_calls = first_ans.get("tool_calls", [])
+        if not gold_tool_calls:
+            gold_text = str(first_ans.get("content", ""))
+            return 1.0 if gold_text.strip().lower() in response.strip().lower() else 0.0
+
+        gold_func = gold_tool_calls[0].get("function", {})
+        gold_name = str(gold_func.get("name", ""))
+
+        if gold_name and gold_name.lower() in response.lower():
+            return 1.0
+
+        return 0.0
+
+
+# ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
 
@@ -503,8 +637,10 @@ BENCHMARK_CLASSES: dict[str, type[BenchmarkBase]] = {
     "math_500": MATH500Benchmark,
     "mmlu_pro": MMLUProBenchmark,
     "ifeval": IFEvalBenchmark,
+    "hle": HLEBenchmark,
+    "scicode": SciCodeBenchmark,
+    "tau_bench": TauBenchBenchmark,
 }
-
 
 
 def create_benchmark(name: str, config: BenchmarkConfig, settings: Settings) -> BenchmarkBase:
@@ -512,3 +648,4 @@ def create_benchmark(name: str, config: BenchmarkConfig, settings: Settings) -> 
     if cls is None:
         raise ValueError(f"Unknown benchmark: {name}")
     return cls(config, settings)
+

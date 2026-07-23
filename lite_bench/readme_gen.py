@@ -197,6 +197,42 @@ BENCHMARK_INFO: dict[str, dict] = {
             "constraints checked by 25 deterministic programmatic verifiers."
         ),
     },
+    "hle": {
+        "display": "Humanity's Last Exam",
+        "category": "Knowledge",
+        "total": "2,500",
+        "verification": "Exact match / \\boxed{} extraction / letter selection",
+        "source": "cais/hle",
+        "paper": "Center for AI Safety & Scale AI 2025",
+        "description": (
+            "2,500 multi-disciplinary questions across STEM, humanities, and social sciences "
+            "designed to test the frontier of AI reasoning."
+        ),
+    },
+    "scicode": {
+        "display": "SciCode",
+        "category": "Coding",
+        "total": "65",
+        "verification": "Python code execution & unit test assertions",
+        "source": "SciCode1/SciCode",
+        "paper": "SciCode Team 2024",
+        "description": (
+            "Research-level scientific Python programming problems across physics, chemistry, "
+            "biology, and materials science requiring multi-step numerical algorithms."
+        ),
+    },
+    "tau_bench": {
+        "display": "Tau-Bench (Banking)",
+        "category": "Instruction",
+        "total": "82",
+        "verification": "Agentic tool-call function & argument matching",
+        "source": "amityco/tau-bench-retail-train-next-action",
+        "paper": "Sierra Research 2024",
+        "description": (
+            "Multi-turn agentic customer service workflows evaluating precise tool choice, "
+            "function calling, and user dialogue trajectory control."
+        ),
+    },
 }
 
 
@@ -262,8 +298,8 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     _a("> **Small, repeatable samples of established benchmarks with programmatic scoring.")
     _a("> No LLM-as-judge. Sampling and scoring are deterministic; model outputs may vary.**")
     _a("")
-    _a("This repo benchmarks LLMs on ~50 questions sampled from each of 8 established")
-    _a("benchmarks, grouped into 5 categories. Results, rankings, and charts below are")
+    _a("This repo benchmarks LLMs on ~50 questions sampled from established benchmarks")
+    _a("grouped into 5 core categories. Results, rankings, and charts below are")
     _a("**auto-generated** by `py run_benchmark.py` after every run.")
     _a("")
 
@@ -282,29 +318,6 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
                 f"| {info['verification']} | `{info['source']}` |"
             )
     _a("")
-
-    # Detailed descriptions
-    _a("### Benchmark Details")
-    _a("")
-    for bname in bench_names:
-        info = BENCHMARK_INFO.get(bname)
-        if not info:
-            continue
-        _a("<details>")
-        _a(f"<summary><b>{info['display']}</b> — {info['description'][:80]}…</summary>")
-        _a("")
-        _a(info["description"])
-        _a("")
-        _a(f"- **Paper:** {info['paper']}")
-        _a(f"- **Dataset:** `{info['source']}`")
-        _a(f"- **Verification:** {info['verification']}")
-        _a(f"- **Full dataset size:** {info['total']} questions")
-        _a(
-            f"- **Sampled:** {config.benchmarks[bname].num_samples} questions (seed={config.settings.seed})"
-        )
-        _a("")
-        _a("</details>")
-        _a("")
 
     # ── Leaderboard ─────────────────────────────────────────────────
     _a("## 🏅 Leaderboard")
