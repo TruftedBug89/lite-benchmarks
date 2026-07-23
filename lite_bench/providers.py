@@ -10,7 +10,8 @@ Tracks per-request telemetry:
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+import warnings
+from dataclasses import dataclass
 
 import litellm
 from rich.console import Console
@@ -21,6 +22,10 @@ console = Console()
 
 litellm.suppress_debug_info = True
 
+# LiteLLM response objects trigger noisy Pydantic v2 serializer warnings
+# (optional fields not always populated).  Harmless — silence them.
+warnings.filterwarnings("ignore", message="Pydantic serializer warnings")
+
 LOCAL_PREFIXES = ("lm_studio/", "ollama/")
 
 
@@ -28,11 +33,11 @@ LOCAL_PREFIXES = ("lm_studio/", "ollama/")
 class GenerationResult:
     text: str
     input_tokens: int = 0
-    output_tokens: int = 0
+    output_tokens: int = 0  # Non-reasoning completion tokens.
     thinking_tokens: int = 0
     total_tokens: int = 0
-    total_time_ms: float | None = None      # None for local models
-    tokens_per_second: float | None = None   # None for local models
+    total_time_ms: float | None = None  # None for local models
+    tokens_per_second: float | None = None  # None for local models
 
     @property
     def output_ratio(self) -> float:
@@ -66,7 +71,7 @@ def _is_local(model_id: str) -> bool:
 
 
 def generate(model_id: str, prompt: str, settings: Settings) -> GenerationResult:
-    """Call any litellm-supported model with full telemetry."""
+    """Call any LiteLLM-supported model with full telemetry."""
     local = _is_local(model_id)
 
     start = time.perf_counter()
@@ -80,32 +85,33 @@ def generate(model_id: str, prompt: str, settings: Settings) -> GenerationResult
     )
     elapsed_ms = (time.perf_counter() - start) * 1000
 
-    usage = response.usage
-    inp = usage.prompt_tokens if usage else 0
-    out = usage.completion_tokens if usage else 0
-    total = usage.total_tokens if usage else (inp + out)
-
-    # Thinking / reasoning tokens (DeepSeek R1, Gemini thinking, etc.)
-    thinking = 0
-    try:
-        details = getattr(usage, "completion_tokens_details", None)
-        if details:
-            thinking = getattr(details, "reasoning_tokens", 0) or 0
-    except Exception:
-        pass
+    usage = getattr(response, "usage", None)
+    input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+    completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+    details = getattr(usage, "completion_tokens_details", None)
+    thinking_tokens = int(getattr(details, "reasoning_tokens", 0) or 0)
+    output_tokens = max(0, completion_tokens - thinking_tokens)
+    total_tokens = int(getattr(usage, "total_tokens", 0) or (input_tokens + completion_tokens))
 
     # Speed metrics — skip for local models (hardware-dependent)
     time_ms = None if local else elapsed_ms
     tps = None
-    if not local and elapsed_ms > 0 and out > 0:
-        tps = out / (elapsed_ms / 1000)
+    if not local and elapsed_ms > 0 and completion_tokens > 0:
+        tps = completion_tokens / (elapsed_ms / 1000)
+
+    choices = getattr(response, "choices", None)
+    if not choices:
+        raise RuntimeError("The provider returned no completion choices.")
+    content = getattr(getattr(choices[0], "message", None), "content", None)
+    if not isinstance(content, str):
+        raise RuntimeError("The provider returned a completion without text content.")
 
     return GenerationResult(
-        text=response.choices[0].message.content or "",
-        input_tokens=inp,
-        output_tokens=out,
-        thinking_tokens=thinking,
-        total_tokens=total,
+        text=content,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        thinking_tokens=thinking_tokens,
+        total_tokens=total_tokens,
         total_time_ms=time_ms,
         tokens_per_second=tps,
     )

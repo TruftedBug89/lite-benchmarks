@@ -10,7 +10,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .benchmarks import BENCHMARK_CLASSES
 from .config import Config
 
 CATEGORY_LABELS = {
@@ -34,36 +33,36 @@ BENCHMARK_INFO: dict[str, dict] = {
         "display": "HumanEval+",
         "category": "Coding",
         "total": "164",
-        "verification": "Code execution (EvalPlus, 80× tests)",
+        "verification": "Python test execution (explicit opt-in required)",
         "source": "evalplus/humanevalplus",
         "paper": "Chen et al. 2021, augmented by Liu et al. 2023 (EvalPlus)",
         "description": (
             "164 hand-written Python functions with docstrings. The model must "
-            "generate a working implementation. EvalPlus augments the original "
-            "~10 unit tests per problem to ~764, catching edge-case bugs the "
-            "original HumanEval misses. Scored by executing the generated code "
-            "against the full augmented test suite."
+            "generate a working implementation. The source dataset includes EvalPlus "
+            "test cases. This runner executes the supplied test program locally only "
+            "after an explicit unsafe-code-execution opt-in."
         ),
     },
     "mbpp": {
         "display": "MBPP+",
         "category": "Coding",
-        "total": "399",
-        "verification": "Code execution (EvalPlus augmented)",
+        "total": "378",
+        "verification": "Python test execution (explicit opt-in required)",
         "source": "evalplus/mbppplus",
         "paper": "Austin et al. 2021, augmented by Liu et al. 2023 (EvalPlus)",
         "description": (
-            "399 crowd-sourced Python programming problems (sanitized subset) "
+            "378 crowd-sourced Python programming problems from the hosted EvalPlus "
+            "dataset "
             "designed for entry-level programmers. Each problem has a natural-language "
             "description and assert-based test cases. EvalPlus expands the original "
-            "3 tests per problem with mutation-based fuzzing for deeper coverage."
+            "test suites for deeper coverage."
         ),
     },
     "bigcodebench": {
         "display": "BigCodeBench",
         "category": "Coding",
         "total": "1,140",
-        "verification": "Code execution (unittest)",
+        "verification": "Python unittest execution (explicit opt-in required)",
         "source": "bigcode/bigcodebench (v0.1.4)",
         "paper": "Zhuo et al. 2024",
         "description": (
@@ -85,7 +84,7 @@ BENCHMARK_INFO: dict[str, dict] = {
             "198 graduate-level questions in physics, chemistry, and biology written "
             "by domain experts. The Diamond subset contains questions where both domain "
             "experts agreed on the answer but non-experts scored only 34% even with "
-            "unrestricted internet access — making them genuinely \"Google-proof\". "
+            'unrestricted internet access — making them genuinely "Google-proof". '
             "This is the hardest standard science benchmark for LLMs."
         ),
     },
@@ -136,14 +135,14 @@ BENCHMARK_INFO: dict[str, dict] = {
         "display": "IFEval",
         "category": "Instruction",
         "total": "541",
-        "verification": "24 programmatic verifiers",
+        "verification": "25 programmatic verifiers (strict)",
         "source": "google/IFEval",
         "paper": "Zhou et al. 2023",
         "description": (
             "Tests whether models follow specific formatting and content instructions "
             "(word counts, paragraph structure, keyword inclusion/exclusion, JSON output, "
             "language constraints, etc.). Each prompt has one or more verifiable "
-            "constraints checked by 24 deterministic programmatic verifiers — no "
+            "constraints checked by 25 deterministic programmatic verifiers — no "
             "LLM-as-judge needed. A response passes only if ALL constraints are satisfied."
         ),
     },
@@ -157,8 +156,8 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
 
     # ── Compute scores ──────────────────────────────────────────────
     bench_scores: dict[str, dict[str, float]] = {}
-    cat_scores: dict[str, dict[str, float]] = {}
-    overall: dict[str, float] = {}
+    cat_scores: dict[str, dict[str, float | None]] = {}
+    overall: dict[str, float | None] = {}
     total_in_tokens: dict[str, int] = {}
     total_out_tokens: dict[str, int] = {}
     total_think_tokens: dict[str, int] = {}
@@ -169,41 +168,39 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     for mname in model_names:
         mdata = results[mname]
         bench_scores[mname] = {
-            b: mdata.get(b, {}).get("score", 0.0) for b in bench_names
+            b: mdata[b]["score"]
+            for b in bench_names
+            if isinstance(mdata.get(b), dict) and "score" in mdata[b]
         }
         cat_scores[mname] = {}
         for cat in cat_names:
             s = config.category_score(bench_scores[mname], cat)
-            cat_scores[mname][cat] = s if s is not None else 0.0
-        o = config.overall_score(bench_scores[mname])
-        overall[mname] = o if o is not None else 0.0
-        total_in_tokens[mname] = sum(
-            mdata.get(b, {}).get("input_tokens", 0) for b in bench_names
-        )
-        total_out_tokens[mname] = sum(
-            mdata.get(b, {}).get("output_tokens", 0) for b in bench_names
-        )
-        total_think_tokens[mname] = sum(
-            mdata.get(b, {}).get("thinking_tokens", 0) for b in bench_names
-        )
-        total_all_tokens[mname] = sum(
-            mdata.get(b, {}).get("total_tokens", 0) for b in bench_names
-        )
+            cat_scores[mname][cat] = s
+        overall[mname] = config.overall_score(bench_scores[mname])
+        completed = [mdata[b] for b in bench_names if isinstance(mdata.get(b), dict)]
+        total_in_tokens[mname] = sum(result.get("input_tokens", 0) for result in completed)
+        total_out_tokens[mname] = sum(result.get("output_tokens", 0) for result in completed)
+        total_think_tokens[mname] = sum(result.get("thinking_tokens", 0) for result in completed)
+        total_all_tokens[mname] = sum(result.get("total_tokens", 0) for result in completed)
         # Timing (only for cloud models)
         tps_vals = [
-            mdata.get(b, {}).get("avg_tokens_per_second")
-            for b in bench_names
-            if mdata.get(b, {}).get("avg_tokens_per_second") is not None
+            result.get("avg_tokens_per_second")
+            for result in completed
+            if result.get("avg_tokens_per_second") is not None
         ]
         avg_tps[mname] = sum(tps_vals) / len(tps_vals) if tps_vals else None
         time_vals = [
-            mdata.get(b, {}).get("avg_time_ms")
-            for b in bench_names
-            if mdata.get(b, {}).get("avg_time_ms") is not None
+            result.get("avg_time_ms")
+            for result in completed
+            if result.get("avg_time_ms") is not None
         ]
         avg_time[mname] = sum(time_vals) / len(time_vals) if time_vals else None
 
-    ranked = sorted(model_names, key=lambda m: overall[m], reverse=True)
+    ranked = sorted(
+        model_names,
+        key=lambda m: overall[m] if overall[m] is not None else float("-inf"),
+        reverse=True,
+    )
 
     L: list[str] = []
     _a = L.append
@@ -211,8 +208,8 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     # ── Header ──────────────────────────────────────────────────────
     _a("# 🏆 Lite Benchmarks — Personal LLM Leaderboard")
     _a("")
-    _a("> **Lite subsets of professionally-made benchmarks, each scored with its")
-    _a("> own built-in verification system. No LLM-as-judge. Fully deterministic.**")
+    _a("> **Small, repeatable samples of established benchmarks with programmatic scoring.")
+    _a("> No LLM-as-judge. Sampling and scoring are deterministic; model outputs may vary.**")
     _a("")
     _a("This repo benchmarks LLMs on ~50 questions sampled from each of 8 established")
     _a("benchmarks, grouped into 5 categories. Results, rankings, and charts below are")
@@ -242,7 +239,7 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
         info = BENCHMARK_INFO.get(bname)
         if not info:
             continue
-        _a(f"<details>")
+        _a("<details>")
         _a(f"<summary><b>{info['display']}</b> — {info['description'][:80]}…</summary>")
         _a("")
         _a(info["description"])
@@ -251,7 +248,9 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
         _a(f"- **Dataset:** `{info['source']}`")
         _a(f"- **Verification:** {info['verification']}")
         _a(f"- **Full dataset size:** {info['total']} questions")
-        _a(f"- **Sampled:** {config.benchmarks[bname].num_samples} questions (seed={config.settings.seed})")
+        _a(
+            f"- **Sampled:** {config.benchmarks[bname].num_samples} questions (seed={config.settings.seed})"
+        )
         _a("")
         _a("</details>")
         _a("")
@@ -275,9 +274,12 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
         medals = {1: "🥇", 2: "🥈", 3: "🥉"}
         for i, mname in enumerate(ranked, 1):
             medal = medals.get(i, str(i))
-            row = f"| {medal} | **{mname}** | **{overall[mname]*100:.1f}%** |"
+            score = overall[mname]
+            overall_cell = f"**{score * 100:.1f}%**" if score is not None else "N/A"
+            row = f"| {medal} | **{mname}** | {overall_cell} |"
             for cat in cat_names:
-                row += f" {cat_scores[mname].get(cat, 0)*100:.1f}% |"
+                category_score = cat_scores[mname].get(cat)
+                row += f" {category_score * 100:.1f}% |" if category_score is not None else " N/A |"
             _a(row)
         _a("")
 
@@ -296,10 +298,10 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
         for mname in ranked:
             row = f"| {mname} |"
             for bname in bench_names:
-                s = bench_scores[mname].get(bname, 0)
+                s = bench_scores[mname].get(bname)
                 correct = results[mname].get(bname, {}).get("correct", 0)
                 total = results[mname].get(bname, {}).get("total", 0)
-                row += f" {s*100:.0f}% ({correct}/{total}) |"
+                row += f" {s * 100:.0f}% ({correct}/{total}) |" if s is not None else " N/A |"
             _a(row)
         _a("")
 
@@ -307,11 +309,26 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     _a("## 📊 Charts")
     _a("")
     chart_titles = {
-        "leaderboard.png": ("Overall Scores", "Horizontal bar chart ranked by overall score (average of all category scores)."),
-        "categories.png": ("Category Breakdown", "Grouped bar chart comparing each model across the 5 categories."),
-        "radar.png": ("Category Radar", "Spider chart showing each model's profile across categories. Larger area = stronger overall."),
-        "heatmap.png": ("Benchmark Heatmap", "Per-benchmark scores for every model. Green = high, red = low."),
-        "tokens.png": ("Token Breakdown", "Stacked bar chart of input, thinking, and output tokens per model."),
+        "leaderboard.png": (
+            "Overall Scores",
+            "Horizontal bar chart ranked by overall score (average of all category scores).",
+        ),
+        "categories.png": (
+            "Category Breakdown",
+            "Grouped bar chart comparing each model across the 5 categories.",
+        ),
+        "radar.png": (
+            "Category Radar",
+            "Spider chart showing each model's profile across categories. Larger area = stronger overall.",
+        ),
+        "heatmap.png": (
+            "Benchmark Heatmap",
+            "Per-benchmark scores for every model. Green = high, red = low.",
+        ),
+        "tokens.png": (
+            "Token Breakdown",
+            "Stacked bar chart of input, thinking, and output tokens per model.",
+        ),
     }
     for cp in chart_paths:
         fname = cp.split("/")[-1]
@@ -335,17 +352,21 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
             tout = total_out_tokens.get(mname, 0)
             tthink = total_think_tokens.get(mname, 0)
             ttot = total_all_tokens.get(mname, 0)
-            out_pct = f"{tout/ttot:.0%}" if ttot else "—"
-            think_pct = f"{tthink/ttot:.0%}" if ttot and tthink else "—"
+            out_pct = f"{tout / ttot:.0%}" if ttot else "—"
+            think_pct = f"{tthink / ttot:.0%}" if ttot and tthink else "—"
             tps = avg_tps.get(mname)
             tps_str = f"{tps:.1f}" if tps is not None else "—"
             time_ms = avg_time.get(mname)
-            time_str = f"{time_ms/1000:.1f}s" if time_ms is not None else "—"
-            _a(f"| {mname} | {tin:,} | {tout:,} | {tthink:,} | {ttot:,} "
-               f"| {out_pct} | {think_pct} | {tps_str} | {time_str} |")
+            time_str = f"{time_ms / 1000:.1f}s" if time_ms is not None else "—"
+            _a(
+                f"| {mname} | {tin:,} | {tout:,} | {tthink:,} | {ttot:,} "
+                f"| {out_pct} | {think_pct} | {tps_str} | {time_str} |"
+            )
         _a("")
-        _a("*TPS = output tokens/second (cloud APIs only, skipped for local models). "
-           "Thinking tokens are reasoning/chain-of-thought tokens (e.g. DeepSeek R1).*")
+        _a(
+            "*TPS = output tokens/second (cloud APIs only, skipped for local models). "
+            "Thinking tokens are reasoning/chain-of-thought tokens (e.g. DeepSeek R1).*"
+        )
         _a("")
 
     # ── Methodology ─────────────────────────────────────────────────
@@ -355,15 +376,24 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     sample_sizes = {config.benchmarks[b].num_samples for b in bench_names}
     sample_str = str(sample_sizes.pop()) if len(sample_sizes) == 1 else "varies"
     _a(f"- **~{sample_str} questions** are sampled from each benchmark's full dataset")
-    _a(f"- Sampling uses a **fixed seed ({config.settings.seed})** so the same questions are used across runs and models")
-    _a("- This makes results **reproducible** and **comparable** across models")
+    _a(
+        f"- Sampling uses a **fixed seed ({config.settings.seed})** so the same questions are used across runs and models"
+    )
+    _a(
+        "- Pin a dataset `revision` in `config.yaml` to make samples reproducible across dataset updates"
+    )
+    _a(
+        "- Temperature zero reduces variance, but provider-side inference is not guaranteed deterministic"
+    )
     _a("")
     _a("### Scoring")
-    _a("- **All scoring is deterministic** — no LLM-as-judge is used anywhere")
-    _a("- Coding benchmarks execute generated code against built-in test suites")
+    _a("- **All scoring is programmatic** — no LLM-as-judge is used anywhere")
+    _a(
+        "- Code benchmarks are skipped unless `--allow-unsafe-code-execution` is passed in an isolated sandbox"
+    )
     _a("- Multiple-choice benchmarks extract the answer letter and compare to ground truth")
     _a("- GSM8K extracts the final number (after `####`) and compares numerically")
-    _a("- IFEval uses 24 programmatic verifiers (word count, format, keywords, etc.)")
+    _a("- IFEval uses its 25 strict programmatic verifiers (word count, format, keywords, etc.)")
     _a("")
     _a("### Category & Overall Scores")
     _a("- **Category score** = average of its benchmark scores")
@@ -372,13 +402,16 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
         bench_labels = [BENCHMARK_INFO.get(b, {}).get("display", b) for b in benches]
         icon = CATEGORY_ICONS.get(cat, "")
         _a(f"  - {icon} **{CATEGORY_LABELS.get(cat, cat)}** = avg({', '.join(bench_labels)})")
-    _a("- **Overall score** = average of all category scores (equal weight per category)")
+    _a("- **Overall score** = average of completed category scores (equal weight per category)")
+    _a(
+        "- A failed request is excluded and recorded separately; it is never silently scored as incorrect"
+    )
     _a("")
     _a("### Inference Settings")
     _a(f"- `temperature`: {config.settings.temperature}")
     _a(f"- `max_tokens`: {config.settings.max_tokens}")
     _a(f"- `timeout`: {config.settings.request_timeout}s per request")
-    _a(f"- `retries`: {config.settings.max_retries} with exponential backoff")
+    _a(f"- `retries`: up to {config.settings.max_retries} provider retries")
     _a("")
 
     # ── How to run ──────────────────────────────────────────────────
@@ -401,7 +434,9 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     _a("| Groq | `GROQ_API_KEY` | [console.groq.com](https://console.groq.com) |")
     _a("| Google Gemini | `GEMINI_API_KEY` | [aistudio.google.com](https://aistudio.google.com) |")
     _a("| LM Studio (local) | *(none needed)* | [lmstudio.ai](https://lmstudio.ai) |")
-    _a("| HuggingFace | `HF_TOKEN` | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) |")
+    _a(
+        "| HuggingFace | `HF_TOKEN` | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) |"
+    )
     _a("")
     _a("> **Note:** All datasets are public. `HF_TOKEN` is optional but speeds up")
     _a("> downloads and avoids rate limits on HuggingFace.")
@@ -411,6 +446,9 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     _a("```bash")
     _a("# Run all benchmarks on all configured models")
     _a("py run_benchmark.py")
+    _a("")
+    _a("# Run code benchmarks only in an isolated sandbox; this executes model-generated Python")
+    _a("py run_benchmark.py --allow-unsafe-code-execution --benchmarks humaneval mbpp bigcodebench")
     _a("")
     _a("# Run specific benchmarks only")
     _a("py run_benchmark.py --benchmarks humaneval mbpp gsm8k")
@@ -433,7 +471,9 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     # ── Adding models ───────────────────────────────────────────────
     _a("## ➕ Adding Models")
     _a("")
-    _a("Edit `config.yaml` and add any [litellm-supported model](https://docs.litellm.ai/docs/providers):")
+    _a(
+        "Edit `config.yaml` and add any [litellm-supported model](https://docs.litellm.ai/docs/providers):"
+    )
     _a("")
     _a("```yaml")
     _a("models:")
@@ -461,18 +501,19 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     _a("│   ├── config.py            # Config loading & validation")
     _a("│   ├── providers.py         # litellm wrapper (100+ providers)")
     _a("│   ├── datasets.py          # HuggingFace dataset sampling")
-    _a("│   ├── benchmarks.py        # 7 benchmark implementations")
-    _a("│   ├── ifeval_verifiers.py  # 24 programmatic IFEval verifiers")
+    _a("│   ├── benchmarks.py        # 8 benchmark implementations")
+    _a("│   ├── ifeval_verifiers.py  # 25 strict IFEval verifiers")
     _a("│   ├── charts.py            # matplotlib chart generation")
     _a("│   └── readme_gen.py        # This README generator")
     _a("├── results/                 # JSON results per run")
     _a("│   ├── latest.json          # Most recent run")
     _a("│   └── results_YYYYMMDD_HHMMSS.json")
-    _a("└── charts/                  # Generated PNG charts")
+    _a("├── charts/                  # Generated PNG charts")
     _a("    ├── leaderboard.png")
     _a("    ├── categories.png")
     _a("    ├── radar.png")
     _a("    └── heatmap.png")
+    _a("└── tests/                   # Regression tests")
     _a("```")
     _a("")
 
@@ -480,14 +521,14 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     _a("---")
     _a("")
-    _a(f"*Auto-generated by [lite-benchmarks](.) on {now}. "
-       f"Run `py run_benchmark.py` to update.*")
+    _a(f"*Auto-generated by [lite-benchmarks](.) on {now}. Run `py run_benchmark.py` to update.*")
     _a("")
 
     return "\n".join(L)
 
 
-def write_readme(results: dict, config: Config, chart_paths: list[str],
-                 path: str = "README.md") -> None:
+def write_readme(
+    results: dict, config: Config, chart_paths: list[str], path: str = "README.md"
+) -> None:
     content = generate(results, config, chart_paths)
     Path(path).write_text(content, encoding="utf-8")

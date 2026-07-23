@@ -1,7 +1,8 @@
-"""Programmatic verifiers for IFEval instructions.
+"""Strict IFEval verifiers compatible with the official dataset schema.
 
-Implements the official verification logic from google/IFEval so that
-instruction-following can be scored deterministically without an LLM judge.
+The dataset stores the instruction arguments alongside every prompt.  These
+functions deliberately use those argument names and strict semantics so that a
+score can be compared with IFEval's strict prompt-level metric.
 """
 
 from __future__ import annotations
@@ -9,225 +10,230 @@ from __future__ import annotations
 import json
 import re
 import string
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any
+
+from langdetect import LangDetectException, detect
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _count_words(text: str) -> int:
-    return len(text.split())
+def _count_sentences(value: str) -> int:
+    return len([sentence for sentence in re.split(r"[.!?]+", value) if sentence.strip()])
 
 
-def _count_sentences(text: str) -> int:
-    sentences = re.split(r"[.!?]+", text)
-    return len([s for s in sentences if s.strip()])
+def _count_words(value: str) -> int:
+    return len(value.split())
 
 
-def _count_paragraphs(text: str) -> int:
-    paragraphs = re.split(r"\n\s*\n", text)
-    return len([p for p in paragraphs if p.strip()])
-
-
-def _get_paragraphs(text: str) -> list[str]:
-    paragraphs = re.split(r"\n\s*\n", text)
-    return [p.strip() for p in paragraphs if p.strip()]
-
-
-# ---------------------------------------------------------------------------
-# Verifiers — each returns True if the response satisfies the constraint
-# ---------------------------------------------------------------------------
-
-def verify_number_words(response: str, **kw) -> bool:
-    count = _count_words(response)
-    if "min_words" in kw and kw["min_words"] is not None:
-        if count < kw["min_words"]:
-            return False
-    if "max_words" in kw and kw["max_words"] is not None:
-        if count > kw["max_words"]:
-            return False
-    return True
-
-
-def verify_number_sentences(response: str, **kw) -> bool:
-    count = _count_sentences(response)
-    if "min_sentences" in kw and kw["min_sentences"] is not None:
-        if count < kw["min_sentences"]:
-            return False
-    if "max_sentences" in kw and kw["max_sentences"] is not None:
-        if count > kw["max_sentences"]:
-            return False
-    return True
-
-
-def verify_number_paragraphs(response: str, **kw) -> bool:
-    count = _count_paragraphs(response)
-    if "num_paragraphs" in kw and kw["num_paragraphs"] is not None:
-        return count == kw["num_paragraphs"]
-    if "min_paragraphs" in kw and kw["min_paragraphs"] is not None:
-        if count < kw["min_paragraphs"]:
-            return False
-    if "max_paragraphs" in kw and kw["max_paragraphs"] is not None:
-        if count > kw["max_paragraphs"]:
-            return False
-    return True
-
-
-def verify_nth_paragraph_first_word(response: str, **kw) -> bool:
-    nth = kw.get("nth_paragraph", 1)
-    first_word = kw.get("first_word", "")
-    paragraphs = _get_paragraphs(response)
-    if nth > len(paragraphs):
+def _matches_relation(count: int, relation: object, target: object) -> bool:
+    if not isinstance(target, int):
         return False
-    para = paragraphs[nth - 1]
-    words = para.split()
-    if not words:
-        return False
-    return words[0].strip(string.punctuation).lower() == first_word.lower()
+    if relation == "less than":
+        return count < target
+    if relation == "at least":
+        return count >= target
+    return False
 
 
-def verify_number_placeholders(response: str, **kw) -> bool:
-    num = kw.get("num_placeholders", 0)
-    placeholders = re.findall(r"\[.*?\]", response)
-    return len(placeholders) >= num
+def _paragraphs(value: str) -> list[str] | None:
+    paragraphs = re.split(r"\s?\*\*\*\s?", value)
+    for index, paragraph in enumerate(paragraphs):
+        if not paragraph.strip():
+            if index in (0, len(paragraphs) - 1):
+                continue
+            return None
+    return [paragraph for paragraph in paragraphs if paragraph.strip()]
 
 
-def verify_postscript(response: str, **kw) -> bool:
-    marker = kw.get("postscript_marker", "P.S.")
-    return marker.lower() in response.lower()
-
-
-def verify_number_bullet_lists(response: str, **kw) -> bool:
-    num = kw.get("num_bullets", 0)
-    bullets = re.findall(r"^\s*[\*\-\+]\s+", response, re.MULTILINE)
-    return len(bullets) == num
-
-
-def verify_constrained_response(response: str, **kw) -> bool:
-    options = kw.get("options", [])
-    stripped = response.strip()
-    return any(stripped.lower() == opt.lower() for opt in options)
-
-
-def verify_number_highlighted_sections(response: str, **kw) -> bool:
-    num = kw.get("num_highlights", 0)
-    highlights = re.findall(r"\*[^*]+\*", response)
-    return len(highlights) >= num
-
-
-def verify_multiple_sections(response: str, **kw) -> bool:
-    num = kw.get("num_sections", 0)
-    sections = re.findall(r"^#{1,6}\s+", response, re.MULTILINE)
-    return len(sections) >= num
-
-
-def verify_json_format(response: str, **kw) -> bool:
-    stripped = response.strip()
-    if stripped.startswith("```"):
-        stripped = re.sub(r"^```\w*\n?", "", stripped)
-        stripped = re.sub(r"\n?```$", "", stripped)
-        stripped = stripped.strip()
-    try:
-        json.loads(stripped)
-        return True
-    except (json.JSONDecodeError, ValueError):
-        return False
-
-
-def verify_title(response: str, **kw) -> bool:
-    return bool(re.search(r"<<.+?>>", response))
-
-
-def verify_keywords_existence(response: str, **kw) -> bool:
-    keywords = kw.get("keywords", [])
-    response_lower = response.lower()
-    return all(kw.lower() in response_lower for kw in keywords)
-
-
-def verify_keyword_frequency(response: str, **kw) -> bool:
-    keyword = kw.get("keyword", "")
-    frequency = kw.get("frequency", 1)
-    if not keyword:
-        return True
-    count = response.lower().count(keyword.lower())
-    return count == frequency
-
-
-def verify_forbidden_words(response: str, **kw) -> bool:
-    forbidden = kw.get("forbidden_words", [])
-    response_lower = response.lower()
-    return all(w.lower() not in response_lower for w in forbidden)
-
-
-def verify_letter_frequency(response: str, **kw) -> bool:
-    letter = kw.get("letter", "")
-    frequency = kw.get("frequency", 0)
-    if not letter:
-        return True
-    count = response.lower().count(letter.lower())
-    return count == frequency
-
-
-def verify_response_language(response: str, **kw) -> bool:
-    language = kw.get("language", "English")
-    try:
-        from langdetect import detect
-        detected = detect(response)
-        lang_map = {
-            "english": "en", "french": "fr", "spanish": "es", "german": "de",
-            "italian": "it", "portuguese": "pt", "dutch": "nl", "russian": "ru",
-            "chinese": "zh-cn", "japanese": "ja", "korean": "ko", "arabic": "ar",
-            "hindi": "hi", "turkish": "tr", "polish": "pl", "swedish": "sv",
-        }
-        expected = lang_map.get(language.lower(), language.lower())
-        return detected == expected
-    except Exception:
-        return False
-
-
-def verify_two_responses(response: str, **kw) -> bool:
-    return "******" in response
-
-
-def verify_repeat_prompt(response: str, **kw) -> bool:
-    prompt = kw.get("prompt", "")
-    if not prompt:
-        return True
-    return response.strip().startswith(prompt.strip())
-
-
-def verify_end_checker(response: str, **kw) -> bool:
-    end_phrase = kw.get("end_phrase", "")
-    return response.strip().endswith(end_phrase)
-
-
-def verify_quotation(response: str, **kw) -> bool:
-    stripped = response.strip()
-    return (
-        (stripped.startswith('"') and stripped.endswith('"'))
-        or (stripped.startswith("'") and stripped.endswith("'"))
+def verify_number_words(response: str, **kwargs: Any) -> bool:
+    return _matches_relation(
+        _count_words(response), kwargs.get("relation"), kwargs.get("num_words")
     )
 
 
-def verify_english_lowercase(response: str, **kw) -> bool:
-    letters = [c for c in response if c.isalpha()]
-    return all(c.islower() for c in letters) if letters else True
+def verify_number_sentences(response: str, **kwargs: Any) -> bool:
+    return _matches_relation(
+        _count_sentences(response), kwargs.get("relation"), kwargs.get("num_sentences")
+    )
 
 
-def verify_english_capital(response: str, **kw) -> bool:
-    letters = [c for c in response if c.isalpha()]
-    return all(c.isupper() for c in letters) if letters else True
+def verify_number_paragraphs(response: str, **kwargs: Any) -> bool:
+    paragraphs = _paragraphs(response)
+    return paragraphs is not None and len(paragraphs) == kwargs.get("num_paragraphs")
 
 
-def verify_no_comma(response: str, **kw) -> bool:
+def verify_nth_paragraph_first_word(response: str, **kwargs: Any) -> bool:
+    paragraphs = _paragraphs(response)
+    nth = kwargs.get("nth_paragraph")
+    first_word = kwargs.get("first_word")
+    if paragraphs is None or not isinstance(nth, int) or not isinstance(first_word, str):
+        return False
+    if nth < 1 or nth > len(paragraphs):
+        return False
+    words = paragraphs[nth - 1].split()
+    return bool(words) and words[0].strip(string.punctuation).lower() == first_word.lower()
+
+
+def verify_number_placeholders(response: str, **kwargs: Any) -> bool:
+    required = kwargs.get("num_placeholders")
+    return isinstance(required, int) and len(re.findall(r"\[.*?\]", response)) >= required
+
+
+def verify_postscript(response: str, **kwargs: Any) -> bool:
+    marker = kwargs.get("postscript_marker")
+    if not isinstance(marker, str):
+        return False
+    if marker == "P.P.S":
+        pattern = r"\s*p\.\s?p\.\s?s.*$"
+    elif marker == "P.S.":
+        pattern = r"\s*p\.\s?s\..*$"
+    else:
+        pattern = rf"\s*{re.escape(marker.lower())}.*$"
+    return bool(re.findall(pattern, response.lower(), flags=re.MULTILINE))
+
+
+def verify_number_bullet_lists(response: str, **kwargs: Any) -> bool:
+    expected = kwargs.get("num_bullets")
+    if not isinstance(expected, int):
+        return False
+    stars = re.findall(r"^\s*\*[^\*].*$", response, flags=re.MULTILINE)
+    dashes = re.findall(r"^\s*-.*$", response, flags=re.MULTILINE)
+    return len(stars) + len(dashes) == expected
+
+
+def verify_constrained_response(response: str, **kwargs: Any) -> bool:
+    options = kwargs.get(
+        "options", ("My answer is yes.", "My answer is no.", "My answer is maybe.")
+    )
+    return isinstance(options, Sequence) and any(
+        isinstance(option, str) and option in response.strip() for option in options
+    )
+
+
+def verify_number_highlighted_sections(response: str, **kwargs: Any) -> bool:
+    expected = kwargs.get("num_highlights")
+    if not isinstance(expected, int):
+        return False
+    highlights = re.findall(r"\*[^\n\*]*\*", response)
+    double_highlights = re.findall(r"\*\*[^\n\*]*\*\*", response)
+    count = sum(bool(highlight.strip("*").strip()) for highlight in highlights)
+    count += sum(
+        bool(highlight.removeprefix("**").removesuffix("**").strip())
+        for highlight in double_highlights
+    )
+    return count >= expected
+
+
+def verify_multiple_sections(response: str, **kwargs: Any) -> bool:
+    splitter = kwargs.get("section_spliter")
+    expected = kwargs.get("num_sections")
+    if not isinstance(splitter, str) or not isinstance(expected, int):
+        return False
+    pattern = rf"\s?{re.escape(splitter)}\s?\d+\s?"
+    return len(re.split(pattern, response)) - 1 >= expected
+
+
+def verify_json_format(response: str, **kwargs: Any) -> bool:
+    try:
+        json.loads(response)
+    except (json.JSONDecodeError, TypeError):
+        return False
+    return True
+
+
+def verify_title(response: str, **kwargs: Any) -> bool:
+    return bool(re.search(r"<<.+?>>", response))
+
+
+def verify_keywords_existence(response: str, **kwargs: Any) -> bool:
+    keywords = kwargs.get("keywords")
+    return isinstance(keywords, Sequence) and all(
+        isinstance(keyword, str) and re.search(keyword, response, flags=re.IGNORECASE)
+        for keyword in keywords
+    )
+
+
+def verify_keyword_frequency(response: str, **kwargs: Any) -> bool:
+    keyword = kwargs.get("keyword")
+    frequency = kwargs.get("frequency")
+    if not isinstance(keyword, str) or not isinstance(frequency, int):
+        return False
+    return len(re.findall(keyword, response, flags=re.IGNORECASE)) == frequency
+
+
+def verify_forbidden_words(response: str, **kwargs: Any) -> bool:
+    forbidden_words = kwargs.get("forbidden_words")
+    return isinstance(forbidden_words, Sequence) and all(
+        isinstance(word, str) and not re.search(word, response, flags=re.IGNORECASE)
+        for word in forbidden_words
+    )
+
+
+def verify_letter_frequency(response: str, **kwargs: Any) -> bool:
+    letter = kwargs.get("letter")
+    if not isinstance(letter, str) or len(letter) != 1:
+        return False
+    return _matches_relation(
+        response.lower().count(letter.lower()),
+        kwargs.get("let_relation"),
+        kwargs.get("let_frequency"),
+    )
+
+
+def verify_response_language(response: str, **kwargs: Any) -> bool:
+    language = kwargs.get("language")
+    if not isinstance(language, str):
+        return False
+    expected = {"english": "en", "chinese": "zh-cn"}.get(language.lower(), language.lower())
+    try:
+        return detect(response) == expected
+    except LangDetectException:
+        # The reference evaluator treats indeterminate short text as compliant.
+        return True
+
+
+def verify_two_responses(response: str, **kwargs: Any) -> bool:
+    return "******" in response
+
+
+def verify_repeat_prompt(response: str, **kwargs: Any) -> bool:
+    prompt = kwargs.get("prompt_to_repeat")
+    return isinstance(prompt, str) and response.strip().startswith(prompt.strip())
+
+
+def verify_end_checker(response: str, **kwargs: Any) -> bool:
+    end_phrase = kwargs.get("end_phrase")
+    return isinstance(end_phrase, str) and response.strip().endswith(end_phrase)
+
+
+def verify_quotation(response: str, **kwargs: Any) -> bool:
+    value = response.strip()
+    return (value.startswith('"') and value.endswith('"')) or (
+        value.startswith("'") and value.endswith("'")
+    )
+
+
+def verify_capital_word_frequency(response: str, **kwargs: Any) -> bool:
+    words = re.findall(r"\b[A-Z]+\b", response)
+    return _matches_relation(
+        len(words), kwargs.get("capital_relation"), kwargs.get("capital_frequency")
+    )
+
+
+def verify_english_lowercase(response: str, **kwargs: Any) -> bool:
+    return all(letter.islower() for letter in re.findall(r"[a-zA-Z]", response))
+
+
+def verify_english_capital(response: str, **kwargs: Any) -> bool:
+    return all(letter.isupper() for letter in re.findall(r"[a-zA-Z]", response))
+
+
+def verify_no_comma(response: str, **kwargs: Any) -> bool:
     return "," not in response
 
 
-# ---------------------------------------------------------------------------
-# Registry
-# ---------------------------------------------------------------------------
+Verifier = Callable[..., bool]
 
-VERIFIERS: dict[str, callable] = {
+VERIFIERS: dict[str, Verifier] = {
     "length_constraints:number_words": verify_number_words,
     "length_constraints:number_sentences": verify_number_sentences,
     "length_constraints:number_paragraphs": verify_number_paragraphs,
@@ -249,26 +255,31 @@ VERIFIERS: dict[str, callable] = {
     "combination:repeat_prompt": verify_repeat_prompt,
     "startend:end_checker": verify_end_checker,
     "startend:quotation": verify_quotation,
+    "change_case:capital_word_frequency": verify_capital_word_frequency,
     "change_case:english_lowercase": verify_english_lowercase,
     "change_case:english_capital": verify_english_capital,
     "punctuation:no_comma": verify_no_comma,
 }
 
 
-def verify_instruction(instruction_id: str, response: str, kwargs: dict) -> bool:
-    """Verify a single IFEval instruction. Returns True if satisfied."""
+def verify_instruction(instruction_id: str, response: str, kwargs: Mapping[str, Any]) -> bool:
+    """Check one IFEval instruction and fail closed on malformed data."""
     verifier = VERIFIERS.get(instruction_id)
     if verifier is None:
-        return False  # Unknown instruction → fail safe
+        return False
     try:
         return verifier(response, **kwargs)
-    except Exception:
+    except (TypeError, ValueError, re.error):
         return False
 
 
-def verify_all(instruction_ids: list[str], response: str, kwargs_list: list[dict]) -> bool:
-    """Verify all instructions for an IFEval question. All must pass."""
-    for iid, kw in zip(instruction_ids, kwargs_list):
-        if not verify_instruction(iid, response, kw or {}):
-            return False
-    return True
+def verify_all(
+    instruction_ids: Sequence[str], response: str, kwargs_list: Sequence[Mapping[str, Any]]
+) -> bool:
+    """Return true only when every instruction in a prompt is satisfied."""
+    if len(instruction_ids) != len(kwargs_list):
+        return False
+    return all(
+        verify_instruction(instruction_id, response, kwargs)
+        for instruction_id, kwargs in zip(instruction_ids, kwargs_list, strict=True)
+    )

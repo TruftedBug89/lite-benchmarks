@@ -1,6 +1,6 @@
 """Benchmark implementations using real datasets with built-in verification.
 
-8 benchmarks across 5 categories:
+Eight benchmarks across five categories:
   Coding:      HumanEval+ (EvalPlus), MBPP+ (EvalPlus), BigCodeBench (unittest)
   Science:     GPQA Diamond (grad-level MC), ARC-Challenge (science MC)
   Math:        GSM8K (numerical exact match)
@@ -29,6 +29,7 @@ console = Console()
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _strip_code_blocks(text: str) -> str:
     text = text.strip()
@@ -88,9 +89,11 @@ def _execute_code(code: str, timeout: int) -> bool:
 # Base
 # ---------------------------------------------------------------------------
 
+
 class BenchmarkBase(ABC):
     name: str = ""
     display_name: str = ""
+    requires_code_execution = False
 
     def __init__(self, config: BenchmarkConfig, settings: Settings):
         self.config = config
@@ -113,9 +116,11 @@ class BenchmarkBase(ABC):
 # HumanEval — code execution against built-in unit tests
 # ---------------------------------------------------------------------------
 
+
 class HumanEvalBenchmark(BenchmarkBase):
     name = "humaneval"
     display_name = "HumanEval"
+    requires_code_execution = True
 
     def format_prompt(self, q: dict) -> str:
         return (
@@ -137,9 +142,11 @@ class HumanEvalBenchmark(BenchmarkBase):
 # MBPP — code execution against assert-based tests
 # ---------------------------------------------------------------------------
 
+
 class MBPPBenchmark(BenchmarkBase):
     name = "mbpp"
     display_name = "MBPP"
+    requires_code_execution = True
 
     def format_prompt(self, q: dict) -> str:
         prompt = q.get("prompt") or q.get("text", "")
@@ -162,9 +169,11 @@ class MBPPBenchmark(BenchmarkBase):
 # BigCodeBench — practical Python with real libraries, unittest verification
 # ---------------------------------------------------------------------------
 
+
 class BigCodeBenchBenchmark(BenchmarkBase):
     name = "bigcodebench"
     display_name = "BigCodeBench"
+    requires_code_execution = True
 
     def format_prompt(self, q: dict) -> str:
         entry = q.get("entry_point", "task_func")
@@ -193,6 +202,7 @@ class BigCodeBenchBenchmark(BenchmarkBase):
 # GPQA Diamond — graduate-level science multiple choice (community mirror)
 # ---------------------------------------------------------------------------
 
+
 class GPQABenchmark(BenchmarkBase):
     name = "gpqa"
     display_name = "GPQA Diamond"
@@ -219,13 +229,14 @@ class GPQABenchmark(BenchmarkBase):
 # ARC-Challenge — grade-school science multiple choice
 # ---------------------------------------------------------------------------
 
+
 class ARCBenchmark(BenchmarkBase):
     name = "arc"
     display_name = "ARC-Challenge"
 
     def format_prompt(self, q: dict) -> str:
         texts = q["choices"]["text"]
-        options = "\n".join(f"{chr(65+i)}. {t}" for i, t in enumerate(texts))
+        options = "\n".join(f"{chr(65 + i)}. {t}" for i, t in enumerate(texts))
         return (
             f"Question: {q['question']}\n{options}\n\n"
             "Reply with ONLY the letter of the correct answer."
@@ -247,6 +258,7 @@ class ARCBenchmark(BenchmarkBase):
 # ---------------------------------------------------------------------------
 # GSM8K — numerical exact match
 # ---------------------------------------------------------------------------
+
 
 class GSM8KBenchmark(BenchmarkBase):
     name = "gsm8k"
@@ -275,6 +287,7 @@ class GSM8KBenchmark(BenchmarkBase):
 # MMLU-Pro — 10-choice multiple choice
 # ---------------------------------------------------------------------------
 
+
 class MMLUProBenchmark(BenchmarkBase):
     name = "mmlu_pro"
     display_name = "MMLU-Pro"
@@ -287,7 +300,7 @@ class MMLUProBenchmark(BenchmarkBase):
         header = f"Subject: {category}\n\n" if category else ""
         return (
             f"{header}Question: {q['question']}\n{opts}\n\n"
-            f"Reply with ONLY the letter ({letters[0]}-{letters[len(options)-1]}) "
+            f"Reply with ONLY the letter ({letters[0]}-{letters[len(options) - 1]}) "
             "of the correct answer."
         )
 
@@ -302,6 +315,7 @@ class MMLUProBenchmark(BenchmarkBase):
 # ---------------------------------------------------------------------------
 # IFEval — programmatic instruction verifiers
 # ---------------------------------------------------------------------------
+
 
 class IFEvalBenchmark(BenchmarkBase):
     name = "ifeval"

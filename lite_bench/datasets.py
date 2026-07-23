@@ -19,7 +19,7 @@ def load_questions(bench: BenchmarkConfig, settings: Settings) -> list[dict]:
     """
     cache_key = (
         f"{bench.dataset}/{bench.subset}/{bench.split}/"
-        f"{bench.num_samples}/{settings.seed}"
+        f"{bench.revision or 'main'}/{bench.num_samples}/{settings.seed}"
     )
     if cache_key in _cache:
         return _cache[cache_key]
@@ -30,6 +30,8 @@ def load_questions(bench: BenchmarkConfig, settings: Settings) -> list[dict]:
     kwargs: dict = {"path": bench.dataset, "split": bench.split}
     if bench.subset:
         kwargs["name"] = bench.subset
+    if bench.revision:
+        kwargs["revision"] = bench.revision
     token = settings.hf_token
     if token:
         kwargs["token"] = token
@@ -45,10 +47,14 @@ def load_questions(bench: BenchmarkConfig, settings: Settings) -> list[dict]:
             )
         raise
 
-    n = min(bench.num_samples, len(ds))
+    available = len(ds)
+    if available == 0:
+        raise ValueError(f"Dataset {bench.dataset!r} split {bench.split!r} contains no examples.")
+
+    n = min(bench.num_samples, available)
     ds = ds.shuffle(seed=settings.seed).select(range(n))
 
     questions = [dict(row) for row in ds]
     _cache[cache_key] = questions
-    console.print(f"  [dim]Sampled {len(questions)} questions from {len(ds)} available[/dim]")
+    console.print(f"  [dim]Sampled {len(questions)} questions from {available} available[/dim]")
     return questions

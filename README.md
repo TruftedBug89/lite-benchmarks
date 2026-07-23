@@ -1,9 +1,9 @@
 # 🏆 Lite Benchmarks — Personal LLM Leaderboard
 
-> **Lite subsets of professionally-made benchmarks, each scored with its
-> own built-in verification system. No LLM-as-judge. Fully deterministic.**
+> **Small, repeatable samples of established benchmarks with programmatic scoring.
+> No LLM-as-judge. Sampling and scoring are deterministic; model outputs may vary.**
 
-This repo benchmarks LLMs on ~50 questions sampled from each of 7 established
+This repo benchmarks LLMs on ~50 questions sampled from each of 8 established
 benchmarks, grouped into 5 categories. Results, rankings, and charts below are
 **auto-generated** by `py run_benchmark.py` after every run.
 
@@ -11,59 +11,63 @@ benchmarks, grouped into 5 categories. Results, rankings, and charts below are
 
 | Benchmark | Category | Full Dataset | Sampled | Verification | Source |
 |-----------|----------|:-----------:|:-------:|-------------|--------|
-| **HumanEval+** | Coding | 164 | 50 | Code execution (EvalPlus, 80× tests) | `evalplus/humanevalplus` |
-| **MBPP+** | Coding | 399 | 50 | Code execution (EvalPlus augmented) | `evalplus/mbppplus` |
-| **GPQA Diamond** | Science | 198 | 50 | Multiple choice (4 options) | `Idavidrein/gpqa (gpqa_diamond)` |
+| **HumanEval+** | Coding | 164 | 50 | Python test execution (explicit opt-in required) | `evalplus/humanevalplus` |
+| **MBPP+** | Coding | 378 | 50 | Python test execution (explicit opt-in required) | `evalplus/mbppplus` |
+| **BigCodeBench** | Coding | 1,140 | 50 | Python unittest execution (explicit opt-in required) | `bigcode/bigcodebench (v0.1.4)` |
+| **GPQA Diamond** | Science | 198 | 50 | Multiple choice (4 options) | `nichenshun/gpqa_diamond (community mirror of Idavidrein/gpqa)` |
 | **ARC-Challenge** | Science | 1,172 | 50 | Multiple choice | `allenai/ai2_arc (ARC-Challenge)` |
 | **GSM8K** | Math | 1,319 | 50 | Numerical exact match (#### format) | `openai/gsm8k (main)` |
 | **MMLU-Pro** | Knowledge | 12,032 | 50 | Multiple choice (10 options) | `TIGER-Lab/MMLU-Pro` |
-| **IFEval** | Instruction | 541 | 50 | 24 programmatic verifiers | `google/IFEval` |
+| **IFEval** | Instruction | 541 | 50 | 25 programmatic verifiers (strict) | `google/IFEval` |
 
 ### Benchmark Details
 
 <details>
-<summary><b>HumanEval+</b> — 164 hand-written Python functions with docstrings…</summary>
+<summary><b>HumanEval+</b> — 164 hand-written Python functions with docstrings. The model must generate a wor…</summary>
 
-164 hand-written Python functions with docstrings. The model must generate a working
-implementation. EvalPlus augments the original ~10 unit tests per problem to ~764,
-catching edge-case bugs the original HumanEval misses. Scored by executing the generated
-code against the full augmented test suite.
+164 hand-written Python functions with docstrings. The model must generate a working implementation. The source dataset includes EvalPlus test cases. This runner executes the supplied test program locally only after an explicit unsafe-code-execution opt-in.
 
 - **Paper:** Chen et al. 2021, augmented by Liu et al. 2023 (EvalPlus)
 - **Dataset:** `evalplus/humanevalplus`
-- **Verification:** Code execution (EvalPlus, 80× tests)
+- **Verification:** Python test execution (explicit opt-in required)
 - **Full dataset size:** 164 questions
 - **Sampled:** 50 questions (seed=42)
 
 </details>
 
 <details>
-<summary><b>MBPP+</b> — 399 crowd-sourced Python programming problems…</summary>
+<summary><b>MBPP+</b> — 378 crowd-sourced Python programming problems from the hosted EvalPlus dataset d…</summary>
 
-399 crowd-sourced Python programming problems (sanitized subset) designed for
-entry-level programmers. Each problem has a natural-language description and
-assert-based test cases. EvalPlus expands the original 3 tests per problem with
-mutation-based fuzzing for deeper coverage.
+378 crowd-sourced Python programming problems from the hosted EvalPlus dataset designed for entry-level programmers. Each problem has a natural-language description and assert-based test cases. EvalPlus expands the original test suites for deeper coverage.
 
 - **Paper:** Austin et al. 2021, augmented by Liu et al. 2023 (EvalPlus)
 - **Dataset:** `evalplus/mbppplus`
-- **Verification:** Code execution (EvalPlus augmented)
-- **Full dataset size:** 399 questions
+- **Verification:** Python test execution (explicit opt-in required)
+- **Full dataset size:** 378 questions
 - **Sampled:** 50 questions (seed=42)
 
 </details>
 
 <details>
-<summary><b>GPQA Diamond</b> — 198 graduate-level questions in physics, chemistry, and biology…</summary>
+<summary><b>BigCodeBench</b> — Practical Python programming tasks requiring use of real-world libraries (collec…</summary>
 
-198 graduate-level questions in physics, chemistry, and biology written by domain
-experts. The Diamond subset contains questions where both domain experts agreed on
-the answer but non-experts scored only 34% even with unrestricted internet access —
-making them genuinely "Google-proof". This is the hardest standard science benchmark
-for LLMs.
+Practical Python programming tasks requiring use of real-world libraries (collections, itertools, json, re, os, and more). Unlike HumanEval/MBPP which test algorithmic function completion, BigCodeBench tests whether models can write code that integrates multiple library calls to solve realistic tasks. Verified with unittest-based test suites.
+
+- **Paper:** Zhuo et al. 2024
+- **Dataset:** `bigcode/bigcodebench (v0.1.4)`
+- **Verification:** Python unittest execution (explicit opt-in required)
+- **Full dataset size:** 1,140 questions
+- **Sampled:** 50 questions (seed=42)
+
+</details>
+
+<details>
+<summary><b>GPQA Diamond</b> — 198 graduate-level questions in physics, chemistry, and biology written by domai…</summary>
+
+198 graduate-level questions in physics, chemistry, and biology written by domain experts. The Diamond subset contains questions where both domain experts agreed on the answer but non-experts scored only 34% even with unrestricted internet access — making them genuinely "Google-proof". This is the hardest standard science benchmark for LLMs.
 
 - **Paper:** Rein et al. 2023
-- **Dataset:** `Idavidrein/gpqa (gpqa_diamond)`
+- **Dataset:** `nichenshun/gpqa_diamond (community mirror of Idavidrein/gpqa)`
 - **Verification:** Multiple choice (4 options)
 - **Full dataset size:** 198 questions
 - **Sampled:** 50 questions (seed=42)
@@ -71,12 +75,9 @@ for LLMs.
 </details>
 
 <details>
-<summary><b>ARC-Challenge</b> — Grade-school science questions from the AI2 Reasoning Challenge…</summary>
+<summary><b>ARC-Challenge</b> — Grade-school science questions from the AI2 Reasoning Challenge. The Challenge s…</summary>
 
-Grade-school science questions from the AI2 Reasoning Challenge. The Challenge subset
-contains questions that neither a retrieval-based algorithm nor a word-co-occurrence
-algorithm could answer correctly — requiring genuine scientific reasoning rather than
-pattern matching.
+Grade-school science questions from the AI2 Reasoning Challenge. The Challenge subset contains questions that neither a retrieval-based algorithm nor a word-co-occurrence algorithm could answer correctly — requiring genuine scientific reasoning rather than pattern matching.
 
 - **Paper:** Clark et al. 2018
 - **Dataset:** `allenai/ai2_arc (ARC-Challenge)`
@@ -87,11 +88,9 @@ pattern matching.
 </details>
 
 <details>
-<summary><b>GSM8K</b> — Grade-school math word problems requiring multi-step arithmetic…</summary>
+<summary><b>GSM8K</b> — Grade-school math word problems requiring multi-step arithmetic reasoning. Each …</summary>
 
-Grade-school math word problems requiring multi-step arithmetic reasoning. Each problem
-has a chain-of-thought solution ending with a final numerical answer after '####'.
-Scored by extracting the model's final number and comparing it to the ground truth.
+Grade-school math word problems requiring multi-step arithmetic reasoning. Each problem has a chain-of-thought solution ending with a final numerical answer after '####'. Scored by extracting the model's final number and comparing it to the ground truth.
 
 - **Paper:** Cobbe et al. 2021
 - **Dataset:** `openai/gsm8k (main)`
@@ -102,12 +101,9 @@ Scored by extracting the model's final number and comparing it to the ground tru
 </details>
 
 <details>
-<summary><b>MMLU-Pro</b> — A harder successor to MMLU with 10 answer choices…</summary>
+<summary><b>MMLU-Pro</b> — A harder successor to MMLU with 10 answer choices instead of 4, covering 14 acad…</summary>
 
-A harder successor to MMLU with 10 answer choices instead of 4, covering 14 academic
-disciplines (biology, business, chemistry, computer science, economics, engineering,
-health, history, law, math, philosophy, physics, psychology, other). The extra
-distractors significantly reduce random-guess success and require deeper reasoning.
+A harder successor to MMLU with 10 answer choices instead of 4, covering 14 academic disciplines (biology, business, chemistry, computer science, economics, engineering, health, history, law, math, philosophy, physics, psychology, other). The extra distractors significantly reduce random-guess success and require deeper reasoning.
 
 - **Paper:** Wang et al. 2024
 - **Dataset:** `TIGER-Lab/MMLU-Pro`
@@ -118,17 +114,13 @@ distractors significantly reduce random-guess success and require deeper reasoni
 </details>
 
 <details>
-<summary><b>IFEval</b> — Tests whether models follow specific formatting and content instructions…</summary>
+<summary><b>IFEval</b> — Tests whether models follow specific formatting and content instructions (word c…</summary>
 
-Tests whether models follow specific formatting and content instructions (word counts,
-paragraph structure, keyword inclusion/exclusion, JSON output, language constraints,
-etc.). Each prompt has one or more verifiable constraints checked by 24 deterministic
-programmatic verifiers — no LLM-as-judge needed. A response passes only if ALL
-constraints are satisfied.
+Tests whether models follow specific formatting and content instructions (word counts, paragraph structure, keyword inclusion/exclusion, JSON output, language constraints, etc.). Each prompt has one or more verifiable constraints checked by 25 deterministic programmatic verifiers — no LLM-as-judge needed. A response passes only if ALL constraints are satisfied.
 
 - **Paper:** Zhou et al. 2023
 - **Dataset:** `google/IFEval`
-- **Verification:** 24 programmatic verifiers
+- **Verification:** 25 programmatic verifiers (strict)
 - **Full dataset size:** 541 questions
 - **Sampled:** 50 questions (seed=42)
 
@@ -138,38 +130,42 @@ constraints are satisfied.
 
 *No results yet. Run `py run_benchmark.py` to generate the leaderboard.*
 
+### Per-Benchmark Scores
+
 ## 📊 Charts
 
-*Charts will appear here after the first benchmark run.*
+## 🪙 Token Usage & Performance
 
 ## 🔬 Methodology
 
 ### Sampling
 - **~50 questions** are sampled from each benchmark's full dataset
 - Sampling uses a **fixed seed (42)** so the same questions are used across runs and models
-- This makes results **reproducible** and **comparable** across models
+- Pin a dataset `revision` in `config.yaml` to make samples reproducible across dataset updates
+- Temperature zero reduces variance, but provider-side inference is not guaranteed deterministic
 
 ### Scoring
-- **All scoring is deterministic** — no LLM-as-judge is used anywhere
-- Coding benchmarks execute generated code against built-in test suites
+- **All scoring is programmatic** — no LLM-as-judge is used anywhere
+- Code benchmarks are skipped unless `--allow-unsafe-code-execution` is passed in an isolated sandbox
 - Multiple-choice benchmarks extract the answer letter and compare to ground truth
 - GSM8K extracts the final number (after `####`) and compares numerically
-- IFEval uses 24 programmatic verifiers (word count, format, keywords, etc.)
+- IFEval uses its 25 strict programmatic verifiers (word count, format, keywords, etc.)
 
 ### Category & Overall Scores
 - **Category score** = average of its benchmark scores
-  - 💻 **Coding** = avg(HumanEval+, MBPP+)
+  - 💻 **Coding** = avg(HumanEval+, MBPP+, BigCodeBench)
   - 🔬 **Science** = avg(GPQA Diamond, ARC-Challenge)
   - 📐 **Math** = avg(GSM8K)
   - 📚 **Knowledge** = avg(MMLU-Pro)
   - 📋 **Instruction** = avg(IFEval)
-- **Overall score** = average of all category scores (equal weight per category)
+- **Overall score** = average of completed category scores (equal weight per category)
+- A failed request is excluded and recorded separately; it is never silently scored as incorrect
 
 ### Inference Settings
 - `temperature`: 0.0
 - `max_tokens`: 4096
-- `timeout`: 120s per request
-- `retries`: 3 with exponential backoff
+- `timeout`: 300s per request
+- `retries`: up to 3 provider retries
 
 ## 🚀 How to Run
 
@@ -200,6 +196,9 @@ Set environment variables for the providers you want to test.
 ```bash
 # Run all benchmarks on all configured models
 py run_benchmark.py
+
+# Run code benchmarks only in an isolated sandbox; this executes model-generated Python
+py run_benchmark.py --allow-unsafe-code-execution --benchmarks humaneval mbpp bigcodebench
 
 # Run specific benchmarks only
 py run_benchmark.py --benchmarks humaneval mbpp gsm8k
@@ -246,20 +245,21 @@ The `name` is the display name shown in the leaderboard.
 │   ├── config.py            # Config loading & validation
 │   ├── providers.py         # litellm wrapper (100+ providers)
 │   ├── datasets.py          # HuggingFace dataset sampling
-│   ├── benchmarks.py        # 7 benchmark implementations
-│   ├── ifeval_verifiers.py  # 24 programmatic IFEval verifiers
+│   ├── benchmarks.py        # 8 benchmark implementations
+│   ├── ifeval_verifiers.py  # 25 strict IFEval verifiers
 │   ├── charts.py            # matplotlib chart generation
 │   └── readme_gen.py        # This README generator
 ├── results/                 # JSON results per run
 │   ├── latest.json          # Most recent run
 │   └── results_YYYYMMDD_HHMMSS.json
-└── charts/                  # Generated PNG charts
+├── charts/                  # Generated PNG charts
     ├── leaderboard.png
     ├── categories.png
     ├── radar.png
     └── heatmap.png
+└── tests/                   # Regression tests
 ```
 
 ---
 
-*Run `py run_benchmark.py` to generate the leaderboard, charts, and update this README.*
+*Auto-generated by [lite-benchmarks](.) on 2026-07-23 14:33 UTC. Run `py run_benchmark.py` to update.*

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")  # headless
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,8 +13,14 @@ import numpy as np
 from .config import Config
 
 COLORS = [
-    "#4C72B0", "#DD8452", "#55A868", "#C44E52",
-    "#8172B3", "#937860", "#DA8BC3", "#8C8C8C",
+    "#4C72B0",
+    "#DD8452",
+    "#55A868",
+    "#C44E52",
+    "#8172B3",
+    "#937860",
+    "#DA8BC3",
+    "#8C8C8C",
 ]
 
 CATEGORY_LABELS = {
@@ -43,22 +50,29 @@ def generate_all(results: dict, config: Config, charts_dir: str) -> list[str]:
 
     # Pre-compute scores
     bench_scores: dict[str, dict[str, float]] = {}
-    cat_scores: dict[str, dict[str, float]] = {}
-    overall: dict[str, float] = {}
+    cat_scores: dict[str, dict[str, float | None]] = {}
+    overall: dict[str, float | None] = {}
     for mname in model_names:
         mdata = results[mname]
         bench_scores[mname] = {
-            b: mdata.get(b, {}).get("score", 0.0) for b in bench_names
+            b: mdata[b]["score"]
+            for b in bench_names
+            if isinstance(mdata.get(b), dict) and "score" in mdata[b]
         }
         cat_scores[mname] = {}
         for cat in cat_names:
             s = config.category_score(bench_scores[mname], cat)
-            cat_scores[mname][cat] = s if s is not None else 0.0
-        o = config.overall_score(bench_scores[mname])
-        overall[mname] = o if o is not None else 0.0
+            cat_scores[mname][cat] = s
+        overall[mname] = config.overall_score(bench_scores[mname])
 
     # Sort models by overall score descending
-    ranked = sorted(model_names, key=lambda m: overall[m], reverse=True)
+    ranked = sorted(
+        (mname for mname in model_names if overall[mname] is not None),
+        key=lambda mname: overall[mname],
+        reverse=True,
+    )
+    if not ranked:
+        return []
 
     paths.append(_leaderboard_bar(ranked, overall, out))
     paths.append(_category_bars(ranked, cat_scores, cat_names, out))
@@ -91,9 +105,14 @@ def _leaderboard_bar(ranked, overall, out: Path) -> str:
     ax.set_title("Overall Leaderboard", fontweight="bold")
     ax.set_xlim(0, 100)
     _style(ax)
-    for bar, v in zip(bars, vals):
-        ax.text(bar.get_width() + 1, bar.get_y() + bar.get_height() / 2,
-                f"{v:.1f}%", va="center", fontsize=9)
+    for bar, v in zip(bars, vals, strict=True):
+        ax.text(
+            bar.get_width() + 1,
+            bar.get_y() + bar.get_height() / 2,
+            f"{v:.1f}%",
+            va="center",
+            fontsize=9,
+        )
     fig.tight_layout()
     path = out / "leaderboard.png"
     fig.savefig(path, dpi=150)
@@ -107,10 +126,12 @@ def _category_bars(ranked, cat_scores, cat_names, out: Path) -> str:
     width = 0.8 / max(len(ranked), 1)
     fig, ax = plt.subplots(figsize=(12, 6))
     for i, mname in enumerate(ranked):
-        vals = [cat_scores[mname].get(c, 0) * 100 for c in cat_names]
+        vals = [
+            score * 100 if (score := cat_scores[mname].get(category)) is not None else np.nan
+            for category in cat_names
+        ]
         offset = (i - len(ranked) / 2 + 0.5) * width
-        ax.bar(x + offset, vals, width, label=mname,
-               color=COLORS[i % len(COLORS)])
+        ax.bar(x + offset, vals, width, label=mname, color=COLORS[i % len(COLORS)])
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
     ax.set_ylabel("Score (%)")
@@ -132,10 +153,12 @@ def _radar(ranked, cat_scores, cat_names, out: Path) -> str:
     angles += angles[:1]
     fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
     for i, mname in enumerate(ranked):
-        vals = [cat_scores[mname].get(c, 0) for c in cat_names]
+        vals = [
+            score if (score := cat_scores[mname].get(category)) is not None else np.nan
+            for category in cat_names
+        ]
         vals += vals[:1]
-        ax.plot(angles, vals, "o-", linewidth=2, label=mname,
-                color=COLORS[i % len(COLORS)])
+        ax.plot(angles, vals, "o-", linewidth=2, label=mname, color=COLORS[i % len(COLORS)])
         ax.fill(angles, vals, alpha=0.08, color=COLORS[i % len(COLORS)])
     ax.set_xticks(angles[:-1])
     ax.set_xticklabels(labels, fontsize=10)
@@ -151,10 +174,16 @@ def _radar(ranked, cat_scores, cat_names, out: Path) -> str:
 
 def _heatmap(ranked, bench_scores, bench_names, config, out: Path) -> str:
     from .benchmarks import BENCHMARK_CLASSES
-    labels = [BENCHMARK_CLASSES[b].display_name if b in BENCHMARK_CLASSES else b
-              for b in bench_names]
-    data = np.array([[bench_scores[m].get(b, 0) * 100 for b in bench_names]
-                     for m in ranked])
+
+    labels = [
+        BENCHMARK_CLASSES[b].display_name if b in BENCHMARK_CLASSES else b for b in bench_names
+    ]
+    data = np.array(
+        [
+            [bench_scores[model].get(benchmark, np.nan) * 100 for benchmark in bench_names]
+            for model in ranked
+        ]
+    )
     fig, ax = plt.subplots(figsize=(12, max(3, len(ranked) * 0.7)))
     im = ax.imshow(data, cmap="RdYlGn", aspect="auto", vmin=0, vmax=100)
     ax.set_xticks(range(len(labels)))
@@ -163,9 +192,12 @@ def _heatmap(ranked, bench_scores, bench_names, config, out: Path) -> str:
     ax.set_yticklabels(ranked)
     for i in range(len(ranked)):
         for j in range(len(labels)):
-            color = "white" if data[i, j] < 40 else "black"
-            ax.text(j, i, f"{data[i, j]:.0f}%", ha="center", va="center",
-                    fontsize=9, color=color)
+            value = data[i, j]
+            if np.isnan(value):
+                ax.text(j, i, "N/A", ha="center", va="center", fontsize=9, color="black")
+                continue
+            color = "white" if value < 40 else "black"
+            ax.text(j, i, f"{value:.0f}%", ha="center", va="center", fontsize=9, color=color)
     fig.colorbar(im, ax=ax, label="Score (%)")
     ax.set_title("Benchmark Heatmap", fontweight="bold")
     fig.tight_layout()
@@ -184,7 +216,7 @@ def _token_breakdown(ranked, token_data, out: Path) -> str:
 
     ax.barh(y, inp, label="Input", color="#4C72B0")
     ax.barh(y, think, left=inp, label="Thinking", color="#DD8452")
-    left2 = [i + t for i, t in zip(inp, think)]
+    left2 = [i + t for i, t in zip(inp, think, strict=True)]
     ax.barh(y, outp, left=left2, label="Output", color="#55A868")
 
     ax.set_yticks(y)

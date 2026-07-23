@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lite-benchmarks"
+version = "0.1.0"
+description = "A reproducible, small-sample LLM benchmark runner"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "litellm>=1.84,<2",
+  "datasets>=2.19,<3",
+  "matplotlib>=3.8,<4",
+  "numpy>=1.26,<2",
+  "PyYAML>=6,<7",
+  "rich>=13,<14",
+  "langdetect>=1.0.9,<2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9", "ruff>=0.8,<1"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
