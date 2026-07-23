@@ -16,11 +16,11 @@ models:
     name: Gemini 2.5 Flash
   - id: groq/llama-3.3-70b-versatile
     name: Llama 3.3 70B
-  # Local Ollama examples (uncomment to use):
-  # - id: ollama/llama3.1:8b
-  #   name: Llama 3.1 8B (local)
-  # - id: ollama/qwen2.5-coder:7b
+  # Local LM Studio examples (start the local server first, default port 1234):
+  # - id: lm_studio/qwen2.5-coder-7b-instruct
   #   name: Qwen 2.5 Coder 7B (local)
+  # - id: lm_studio/llama-3.1-8b-instruct
+  #   name: Llama 3.1 8B (local)
 
 # Categories group benchmarks for the leaderboard.
 # Category score = average of its benchmark scores.

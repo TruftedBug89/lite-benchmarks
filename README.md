@@ -189,12 +189,11 @@ Set environment variables for the providers you want to test.
 | DeepSeek | `DEEPSEEK_API_KEY` | [platform.deepseek.com](https://platform.deepseek.com) |
 | Groq | `GROQ_API_KEY` | [console.groq.com](https://console.groq.com) |
 | Google Gemini | `GEMINI_API_KEY` | [aistudio.google.com](https://aistudio.google.com) |
-| Ollama (local) | *(none needed)* | [ollama.com](https://ollama.com) |
-| HuggingFace (GPQA) | `HF_TOKEN` | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) |
+| LM Studio (local) | *(none needed)* | [lmstudio.ai](https://lmstudio.ai) |
+| HuggingFace | `HF_TOKEN` | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) |
 
-> **Note:** GPQA is a gated dataset. You must agree to its terms at
-> [huggingface.co/datasets/Idavidrein/gpqa](https://huggingface.co/datasets/Idavidrein/gpqa)
-> and set `HF_TOKEN` to download it. All other datasets are public.
+> **Note:** All datasets are public. `HF_TOKEN` is optional but speeds up
+> downloads and avoids rate limits on HuggingFace.
 
 ### Commands
 
@@ -229,7 +228,7 @@ models:
     name: Claude Sonnet 4
   - id: openai/gpt-4o
     name: GPT-4o
-  - id: ollama/qwen2.5-coder:7b
+  - id: lm_studio/qwen2.5-coder-7b-instruct
     name: Qwen 2.5 Coder 7B (local)
 ```
 
