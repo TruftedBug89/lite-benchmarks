@@ -1,0 +1,92 @@
+# Lite Benchmarks Configuration
+# API keys are read from environment variables by litellm automatically:
+#   DEEPSEEK_API_KEY, GROQ_API_KEY, GEMINI_API_KEY (or GOOGLE_API_KEY)
+#   Ollama needs no key — just a running server at localhost:11434
+
+# litellm model IDs: "provider/model-name"
+# See https://docs.litellm.ai/docs/providers for the full list.
+models:
+  - id: deepseek/deepseek-chat
+    name: DeepSeek V3
+  - id: deepseek/deepseek-reasoner
+    name: DeepSeek R1
+  - id: gemini/gemini-2.5-pro
+    name: Gemini 2.5 Pro
+  - id: gemini/gemini-2.5-flash
+    name: Gemini 2.5 Flash
+  - id: groq/llama-3.3-70b-versatile
+    name: Llama 3.3 70B
+  # Local Ollama examples (uncomment to use):
+  # - id: ollama/llama3.1:8b
+  #   name: Llama 3.1 8B (local)
+  # - id: ollama/qwen2.5-coder:7b
+  #   name: Qwen 2.5 Coder 7B (local)
+
+# Categories group benchmarks for the leaderboard.
+# Category score = average of its benchmark scores.
+# Overall score  = average of all category scores.
+categories:
+  coding:
+    benchmarks: [humaneval, mbpp]
+  science:
+    benchmarks: [gpqa, arc]
+  math:
+    benchmarks: [gsm8k]
+  knowledge:
+    benchmarks: [mmlu_pro]
+  instruction:
+    benchmarks: [ifeval]
+
+benchmarks:
+  humaneval:
+    enabled: true
+    dataset: evalplus/humanevalplus
+    split: test
+    num_samples: 50
+  mbpp:
+    enabled: true
+    dataset: evalplus/mbppplus
+    split: test
+    num_samples: 50
+  gpqa:
+    enabled: true
+    dataset: Idavidrein/gpqa
+    subset: gpqa_diamond
+    split: train
+    num_samples: 50
+  arc:
+    enabled: true
+    dataset: allenai/ai2_arc
+    subset: ARC-Challenge
+    split: test
+    num_samples: 50
+  gsm8k:
+    enabled: true
+    dataset: openai/gsm8k
+    subset: main
+    split: test
+    num_samples: 50
+  mmlu_pro:
+    enabled: true
+    dataset: TIGER-Lab/MMLU-Pro
+    split: test
+    num_samples: 50
+  ifeval:
+    enabled: true
+    dataset: google/IFEval
+    split: train
+    num_samples: 50
+
+settings:
+  seed: 42
+  max_tokens: 4096
+  temperature: 0.0
+  request_timeout: 120
+  code_exec_timeout: 15
+  max_retries: 3
+  retry_delay: 2.0
+  results_dir: results
+  charts_dir: charts
+  # HuggingFace token for gated datasets (e.g. GPQA).
+  # Set HF_TOKEN env var or leave empty for public-only datasets.
+  hf_token_env: HF_TOKEN
