@@ -1,239 +1,23 @@
-"""Auto-generate a detailed README.md from benchmark results.
-
-Every section with data (leaderboard, tables, charts, token stats) is
-rebuilt from the latest results JSON each time run_benchmark.py finishes,
-so the README on GitHub always reflects the most recent run.
-"""
+"""Auto-generate a detailed README.md from benchmark results."""
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import Config
+from .metadata import BENCHMARK_INFO, CATEGORY_ICONS, CATEGORY_LABELS
 
-CATEGORY_LABELS = {
-    "coding": "Coding",
-    "science": "Science",
-    "math": "Math",
-    "knowledge": "Knowledge",
-    "instruction": "Instruction",
-}
 
-CATEGORY_ICONS = {
-    "coding": "💻",
-    "science": "🔬",
-    "math": "📐",
-    "knowledge": "📚",
-    "instruction": "📋",
-}
-
-BENCHMARK_INFO: dict[str, dict] = {
-    "bigcodebench_hard": {
-        "display": "BigCodeBench-Hard",
-        "category": "Coding",
-        "total": "148",
-        "verification": "Python unittest execution (explicit opt-in required)",
-        "source": "bigcode/bigcodebench-hard (v0.1.4)",
-        "paper": "Zhuo et al. 2024",
-        "description": (
-            "The hardest 148 practical Python programming tasks from BigCodeBench requiring "
-            "deep integration of complex real-world libraries (pandas, numpy, scipy, etc.)."
-        ),
-    },
-    "humanevalplus": {
-        "display": "HumanEval+",
-        "category": "Coding",
-        "total": "164",
-        "verification": "Python test execution (explicit opt-in required)",
-        "source": "evalplus/humanevalplus",
-        "paper": "Chen et al. 2021, augmented by Liu et al. 2023 (EvalPlus)",
-        "description": (
-            "164 hand-written Python functions with docstrings and rigorously expanded "
-            "test cases to catch edge-case bugs and hallucinated solutions."
-        ),
-    },
-    "mbppplus": {
-        "display": "MBPP+",
-        "category": "Coding",
-        "total": "378",
-        "verification": "Python test execution (explicit opt-in required)",
-        "source": "evalplus/mbppplus",
-        "paper": "Austin et al. 2021, augmented by Liu et al. 2023 (EvalPlus)",
-        "description": (
-            "378 crowd-sourced Python programming problems with heavily augmented "
-            "test suites from EvalPlus for deep coverage."
-        ),
-    },
-    "humaneval": {
-        "display": "HumanEval",
-        "category": "Coding",
-        "total": "164",
-        "verification": "Python test execution (explicit opt-in required)",
-        "source": "evalplus/humanevalplus",
-        "paper": "Chen et al. 2021",
-        "description": (
-            "164 hand-written Python functions with docstrings. The model must "
-            "generate a working implementation."
-        ),
-    },
-    "mbpp": {
-        "display": "MBPP",
-        "category": "Coding",
-        "total": "378",
-        "verification": "Python test execution (explicit opt-in required)",
-        "source": "evalplus/mbppplus",
-        "paper": "Austin et al. 2021",
-        "description": (
-            "378 crowd-sourced Python programming problems designed for entry-level programmers."
-        ),
-    },
-    "bigcodebench": {
-        "display": "BigCodeBench",
-        "category": "Coding",
-        "total": "1,140",
-        "verification": "Python unittest execution (explicit opt-in required)",
-        "source": "bigcode/bigcodebench (v0.1.4)",
-        "paper": "Zhuo et al. 2024",
-        "description": (
-            "Practical Python programming tasks requiring use of real-world libraries."
-        ),
-    },
-    "gpqa": {
-        "display": "GPQA Diamond",
-        "category": "Science",
-        "total": "198",
-        "verification": "Multiple choice (4 options)",
-        "source": "nichenshun/gpqa_diamond (community mirror of Idavidrein/gpqa)",
-        "paper": "Rein et al. 2023",
-        "description": (
-            "198 graduate-level questions in physics, chemistry, and biology written "
-            "by domain experts. Google-proof questions where non-experts score only 34% with internet."
-        ),
-    },
-    "scibench": {
-        "display": "SciBench",
-        "category": "Science",
-        "total": "692",
-        "verification": "Numerical / Formula exact match",
-        "source": "xw27/scibench",
-        "paper": "Wang et al. 2023",
-        "description": (
-            "College-level scientific textbook problem solving in physics, chemistry, "
-            "and thermodynamics requiring multi-step quantitative calculations."
-        ),
-    },
-    "arc": {
-        "display": "ARC-Challenge",
-        "category": "Science",
-        "total": "1,172",
-        "verification": "Multiple choice",
-        "source": "allenai/ai2_arc (ARC-Challenge)",
-        "paper": "Clark et al. 2018",
-        "description": (
-            "Grade-school science questions from the AI2 Reasoning Challenge."
-        ),
-    },
-    "gsm8k": {
-        "display": "GSM8K",
-        "category": "Math",
-        "total": "1,319",
-        "verification": "Numerical exact match (#### format)",
-        "source": "openai/gsm8k (main)",
-        "paper": "Cobbe et al. 2021",
-        "description": (
-            "Grade-school math word problems requiring multi-step arithmetic reasoning."
-        ),
-    },
-    "aime": {
-        "display": "AIME 2024/2025",
-        "category": "Math",
-        "total": "90",
-        "verification": "Integer exact match (000-999)",
-        "source": "AI-MO/aimo-validation-aime",
-        "paper": "MAA AIME Competition Problems",
-        "description": (
-            "American Invitational Mathematics Examination (AIME) high-school competition math problems. "
-            "Premier benchmark for evaluating advanced mathematical reasoning in SOTA AI models."
-        ),
-    },
-    "math_500": {
-        "display": "MATH-500",
-        "category": "Math",
-        "total": "500",
-        "verification": "Exact match / \\boxed{} extraction",
-        "source": "HuggingFaceH4/MATH-500",
-        "paper": "Hendrycks et al. 2021 / Lightman et al. 2023",
-        "description": (
-            "500 challenging competition math problems (Levels 1 to 5) across algebra, geometry, "
-            "number theory, calculus, and probability."
-        ),
-    },
-    "mmlu_pro": {
-        "display": "MMLU-Pro",
-        "category": "Knowledge",
-        "total": "12,032",
-        "verification": "Multiple choice (10 options)",
-        "source": "TIGER-Lab/MMLU-Pro",
-        "paper": "Wang et al. 2024",
-        "description": (
-            "A harder successor to MMLU with 10 answer choices instead of 4, covering "
-            "14 academic disciplines (biology, business, chemistry, computer science, "
-            "economics, engineering, health, history, law, math, philosophy, physics, "
-            "psychology, other)."
-        ),
-    },
-    "ifeval": {
-        "display": "IFEval",
-        "category": "Instruction",
-        "total": "541",
-        "verification": "25 programmatic verifiers (strict)",
-        "source": "google/IFEval",
-        "paper": "Zhou et al. 2023",
-        "description": (
-            "Tests whether models follow specific formatting and content instructions "
-            "(word counts, paragraph structure, keyword inclusion/exclusion, JSON output, "
-            "language constraints, etc.). Each prompt has one or more verifiable "
-            "constraints checked by 25 deterministic programmatic verifiers."
-        ),
-    },
-    "hle": {
-        "display": "Humanity's Last Exam",
-        "category": "Knowledge",
-        "total": "2,500",
-        "verification": "Exact match / \\boxed{} extraction / letter selection",
-        "source": "cais/hle",
-        "paper": "Center for AI Safety & Scale AI 2025",
-        "description": (
-            "2,500 multi-disciplinary questions across STEM, humanities, and social sciences "
-            "designed to test the frontier of AI reasoning."
-        ),
-    },
-    "scicode": {
-        "display": "SciCode",
-        "category": "Coding",
-        "total": "65",
-        "verification": "Python code execution & unit test assertions",
-        "source": "SciCode1/SciCode",
-        "paper": "SciCode Team 2024",
-        "description": (
-            "Research-level scientific Python programming problems across physics, chemistry, "
-            "biology, and materials science requiring multi-step numerical algorithms."
-        ),
-    },
-    "tau_bench": {
-        "display": "Tau-Bench (Banking)",
-        "category": "Instruction",
-        "total": "82",
-        "verification": "Agentic tool-call function & argument matching",
-        "source": "amityco/tau-bench-retail-train-next-action",
-        "paper": "Sierra Research 2024",
-        "description": (
-            "Multi-turn agentic customer service workflows evaluating precise tool choice, "
-            "function calling, and user dialogue trajectory control."
-        ),
-    },
-}
+def wilson_half_width(correct: int, total: int, z: float = 1.96) -> float:
+    """Calculate 95% Wilson score interval half-width in percentage points."""
+    if total <= 0:
+        return 0.0
+    p = correct / total
+    denom = 1 + z**2 / total
+    margin = (z * math.sqrt((p * (1 - p) + z**2 / (4 * total)) / total)) / denom
+    return round(margin * 100, 1)
 
 
 def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
@@ -249,6 +33,7 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     total_out_tokens: dict[str, int] = {}
     total_think_tokens: dict[str, int] = {}
     total_all_tokens: dict[str, int] = {}
+    total_cost_usd: dict[str, float | None] = {}
     avg_tps: dict[str, float | None] = {}
     avg_time: dict[str, float | None] = {}
 
@@ -269,7 +54,10 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
         total_out_tokens[mname] = sum(result.get("output_tokens", 0) for result in completed)
         total_think_tokens[mname] = sum(result.get("thinking_tokens", 0) for result in completed)
         total_all_tokens[mname] = sum(result.get("total_tokens", 0) for result in completed)
-        # Timing (only for cloud models)
+
+        costs = [result.get("total_cost_usd") for result in completed if result.get("total_cost_usd") is not None]
+        total_cost_usd[mname] = sum(costs) if costs else None
+
         tps_vals = [
             result.get("avg_tokens_per_second")
             for result in completed
@@ -292,15 +80,18 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     L: list[str] = []
     _a = L.append
 
+    num_benches = len(bench_names)
+    num_cats = len(cat_names)
+
     # ── Header ──────────────────────────────────────────────────────
     _a("# 🏆 Lite Benchmarks — Personal LLM Leaderboard")
     _a("")
     _a("> **Small, repeatable samples of established benchmarks with programmatic scoring.")
     _a("> No LLM-as-judge. Sampling and scoring are deterministic; model outputs may vary.**")
     _a("")
-    _a("This repo benchmarks LLMs on ~50 questions sampled from established benchmarks")
-    _a("grouped into 5 core categories. Results, rankings, and charts below are")
-    _a("**auto-generated** by `py run_benchmark.py` after every run.")
+    _a(f"This repo benchmarks LLMs on ~50 questions sampled from {num_benches} established benchmarks")
+    _a(f"grouped into {num_cats} core categories. Results, rankings, and charts below are")
+    _a("**auto-generated** after every run.")
     _a("")
 
     # ── Benchmarks ──────────────────────────────────────────────────
@@ -309,21 +100,20 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     _a("| Benchmark | Category | Full Dataset | Sampled | Verification | Source |")
     _a("|-----------|----------|:-----------:|:-------:|-------------|--------|")
     for bname in bench_names:
-        info = BENCHMARK_INFO.get(bname)
-        if info:
-            sampled = config.benchmarks[bname].num_samples
-            _a(
-                f"| **{info['display']}** | {info['category']} "
-                f"| {info['total']} | {sampled} "
-                f"| {info['verification']} | `{info['source']}` |"
-            )
+        info = BENCHMARK_INFO.get(bname, {"display": bname, "category": "Other", "total": "N/A", "verification": "Auto", "source": "HF"})
+        sampled = config.benchmarks[bname].num_samples
+        _a(
+            f"| **{info['display']}** | {info['category']} "
+            f"| {info['total']} | {sampled} "
+            f"| {info['verification']} | `{info['source']}` |"
+        )
     _a("")
 
     # ── Leaderboard ─────────────────────────────────────────────────
     _a("## 🏅 Leaderboard")
     _a("")
     if not ranked:
-        _a("*No results yet. Run `py run_benchmark.py` to generate the leaderboard.*")
+        _a("*No results yet. Run `py web_app.py` to launch the dashboard and run benchmarks.*")
         _a("")
     else:
         header = "| Rank | Model | Overall |"
@@ -340,11 +130,13 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
             medal = medals.get(i, str(i))
             score = overall[mname]
             overall_cell = f"**{score * 100:.1f}%**" if score is not None else "N/A"
-            
-            # Identify thinking models
-            is_thinking = total_think_tokens.get(mname, 0) > 0 or results.get(mname, {}).get("thinking_effort") is not None
+
+            is_thinking = (
+                total_think_tokens.get(mname, 0) > 0
+                or results.get(mname, {}).get("thinking_effort") is not None
+            )
             display_name = f"**{mname}** 🧠" if is_thinking else f"**{mname}**"
-            
+
             row = f"| {medal} | {display_name} | {overall_cell} |"
             for cat in cat_names:
                 category_score = cat_scores[mname].get(cat)
@@ -372,8 +164,14 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
                 s = bench_scores[mname].get(bname)
                 correct = results[mname].get(bname, {}).get("correct", 0)
                 total = results[mname].get(bname, {}).get("total", 0)
-                row += f" {s * 100:.0f}% ({correct}/{total}) |" if s is not None else " N/A |"
+                if s is not None and total > 0:
+                    w_margin = wilson_half_width(correct, total)
+                    row += f" {s * 100:.0f}% ({correct}/{total}) ±{w_margin}pp |"
+                else:
+                    row += " N/A |"
             _a(row)
+        _a("")
+        _a("*±pp indicates 95% Wilson score confidence interval half-width.*")
         _a("")
 
     # ── Charts ──────────────────────────────────────────────────────
@@ -420,13 +218,15 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     _a("## 🪙 Token Usage & Performance")
     _a("")
     if ranked:
-        _a("| Model | Input | Output | Thinking | Total | Out % | Think % | Avg TPS | Avg Time |")
-        _a("|-------|------:|-------:|---------:|------:|------:|--------:|--------:|---------:|")
+        _a("| Model | Input | Output | Thinking | Total | Out % | Think % | Avg TPS | Avg Time | Est. Cost |")
+        _a("|-------|------:|-------:|---------:|------:|------:|--------:|--------:|---------:|----------:|")
         for mname in ranked:
             tin = total_in_tokens.get(mname, 0)
             tout = total_out_tokens.get(mname, 0)
             tthink = total_think_tokens.get(mname, 0)
             ttot = total_all_tokens.get(mname, 0)
+            cost_val = total_cost_usd.get(mname)
+            cost_str = f"${cost_val:.4f}" if cost_val is not None else "—"
             out_pct = f"{tout / ttot:.0%}" if ttot else "—"
             think_pct = f"{tthink / ttot:.0%}" if ttot and tthink else "—"
             tps = avg_tps.get(mname)
@@ -435,58 +235,60 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
             time_str = f"{time_ms / 1000:.1f}s" if time_ms is not None else "—"
             _a(
                 f"| {mname} | {tin:,} | {tout:,} | {tthink:,} | {ttot:,} "
-                f"| {out_pct} | {think_pct} | {tps_str} | {time_str} |"
+                f"| {out_pct} | {think_pct} | {tps_str} | {time_str} | {cost_str} |"
             )
         _a("")
         _a(
             "*TPS = output tokens/second (cloud APIs only, skipped for local models). "
-            "Thinking tokens are reasoning/chain-of-thought tokens (e.g. DeepSeek R1).*"
+            "Est. Cost calculated via LiteLLM cost tables.*"
         )
         _a("")
 
     # ── Methodology ─────────────────────────────────────────────────
     _a("## 🔬 Methodology")
     _a("")
-    _a("### Sampling")
+    _a("### Sampling & Statistical Significance")
     sample_sizes = {config.benchmarks[b].num_samples for b in bench_names}
     sample_str = str(sample_sizes.pop()) if len(sample_sizes) == 1 else "varies"
     _a(f"- **~{sample_str} questions** are sampled from each benchmark's full dataset")
     _a(
-        f"- Sampling uses a **fixed seed ({config.settings.seed})** so the same questions are used across runs and models"
+        f"- Sampling uses a **fixed seed ({config.settings.seed})** via random sampling so exact questions are stable across runs"
     )
     _a(
-        "- Pin a dataset `revision` in `config.yaml` to make samples reproducible across dataset updates"
+        "- Samples of n=50 have 95% confidence intervals of roughly ±7–14pp; treat small ranking gaps as noise"
     )
     _a(
-        "- Temperature zero reduces variance, but provider-side inference is not guaranteed deterministic"
+        "- **Scoring v2 Notice**: Sampling and scoring strictness updated in v0.2.0; results are not directly comparable with pre-v0.2.0 runs"
     )
     _a("")
     _a("### Scoring")
     _a("- **All scoring is programmatic** — no LLM-as-judge is used anywhere")
     _a(
-        "- Code benchmarks are skipped unless `--unsafe` is passed in an isolated sandbox"
+        "- Code benchmarks are skipped unless unsafe code execution is enabled in an isolated sandbox"
     )
     _a("- Multiple-choice benchmarks extract the answer letter and compare to ground truth")
-    _a("- GSM8K extracts the final number (after `####`) and compares numerically")
+    _a("- Math benchmarks extract boxed/numerical answers and evaluate symbolically or numerically")
     _a("- IFEval uses its 25 strict programmatic verifiers (word count, format, keywords, etc.)")
+    _a("- Tau-Bench verifies tool function name AND argument dictionary match")
     _a("")
     _a("### Category & Overall Scores")
     _a("- **Category score** = average of its benchmark scores")
     for cat in cat_names:
         benches = config.categories.get(cat, [])
-        bench_labels = [BENCHMARK_INFO.get(b, {}).get("display", b) for b in benches]
-        icon = CATEGORY_ICONS.get(cat, "")
-        _a(f"  - {icon} **{CATEGORY_LABELS.get(cat, cat)}** = avg({', '.join(bench_labels)})")
+        bench_labels = [BENCHMARK_INFO.get(b, {}).get("display", b) for b in benches if b in bench_names]
+        if bench_labels:
+            icon = CATEGORY_ICONS.get(cat, "")
+            _a(f"  - {icon} **{CATEGORY_LABELS.get(cat, cat)}** = avg({', '.join(bench_labels)})")
     _a("- **Overall score** = average of completed category scores (equal weight per category)")
     _a(
-        "- A failed request is excluded and recorded separately; it is never silently scored as incorrect"
+        "- Provider failures are excluded and recorded separately; scorer exceptions score 0.0 without retrying provider"
     )
     _a("")
     _a("### Inference Settings")
     _a(f"- `temperature`: {config.settings.temperature}")
     _a(f"- `max_tokens`: {config.settings.max_tokens}")
     _a(f"- `timeout`: {config.settings.request_timeout}s per request")
-    _a(f"- `retries`: up to {config.settings.max_retries} provider retries")
+    _a(f"- `retries`: up to {config.settings.max_retries} retries with exponential backoff and jitter")
     _a("")
 
     # ── How to run ──────────────────────────────────────────────────
@@ -495,7 +297,7 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     _a("### Prerequisites")
     _a("")
     _a("```bash")
-    _a("pip install -r requirements.txt")
+    _a("pip install -e .[dev]")
     _a("```")
     _a("")
     _a("### API Keys")
@@ -513,55 +315,39 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
         "| HuggingFace | `HF_TOKEN` | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) |"
     )
     _a("")
-    _a("> **Note:** All datasets are public. `HF_TOKEN` is optional but speeds up")
-    _a("> downloads and avoids rate limits on HuggingFace.")
-    _a("")
-    _a("### Commands")
+    _a("### Running Benchmarks via Web Dashboard")
     _a("")
     _a("```bash")
-    _a("# Run all benchmarks on all configured models")
-    _a("py run_benchmark.py")
+    _a("# Launch the local web dashboard (serves on http://127.0.0.1:8000)")
+    _a("py web_app.py")
     _a("")
-    _a("# Run code benchmarks only in an isolated sandbox; this executes model-generated Python")
-    _a("py run_benchmark.py --unsafe --benchmarks humaneval mbpp bigcodebench")
-    _a("")
-    _a("# Run specific benchmarks only")
-    _a("py run_benchmark.py --benchmarks humaneval mbpp gsm8k")
-    _a("")
-    _a("# Run specific models only (by id or display name)")
-    _a("py run_benchmark.py --models deepseek/deepseek-chat gemini/gemini-2.5-flash")
-    _a("")
-    _a("# List configured models and benchmarks")
-    _a("py run_benchmark.py --list")
-    _a("")
-    _a("# Regenerate README + charts from latest results (no API calls)")
-    _a("py run_benchmark.py --generate-only")
+    _a("# Launch without automatically opening browser")
+    _a("py web_app.py --no-browser")
     _a("```")
     _a("")
-    _a("After each run, this README is **automatically regenerated** with updated")
-    _a("rankings, tables, charts, and token stats. Commit the changes to update")
-    _a("your GitHub leaderboard.")
+    _a("1. Open the dashboard in your browser.")
+    _a("2. Select models, benchmarks, and settings.")
+    _a("3. Click **Run Benchmarks**.")
+    _a("4. Click **Generate Reports** to update `README.md` and `charts/`.")
     _a("")
 
     # ── Adding models ───────────────────────────────────────────────
     _a("## ➕ Adding Models")
     _a("")
     _a(
-        "Edit `config.yaml` and add any [litellm-supported model](https://docs.litellm.ai/docs/providers):"
+        "Edit `config.yaml` or add models directly in the Web UI:"
     )
     _a("")
     _a("```yaml")
     _a("models:")
     _a("  - id: anthropic/claude-sonnet-4-20250514")
     _a("    name: Claude Sonnet 4")
+    _a("    max_tokens: 16384")
     _a("  - id: openai/gpt-4o")
     _a("    name: GPT-4o")
     _a("  - id: lm_studio/qwen2.5-coder-7b-instruct")
     _a("    name: Qwen 2.5 Coder 7B (local)")
     _a("```")
-    _a("")
-    _a("The `id` is a litellm model identifier (`provider/model-name`).")
-    _a("The `name` is the display name shown in the leaderboard.")
     _a("")
 
     # ── Project structure ───────────────────────────────────────────
@@ -569,26 +355,23 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     _a("")
     _a("```")
     _a("├── config.yaml              # Models, benchmarks, categories, settings")
-    _a("├── run_benchmark.py         # CLI entry point")
-    _a("├── requirements.txt         # Python dependencies")
+    _a("├── web_app.py               # Web dashboard server")
     _a("├── README.md                # ← this file (auto-generated)")
+    _a("├── web/                     # Web dashboard frontend (HTML/CSS/JS)")
     _a("├── lite_bench/")
+    _a("│   ├── engine.py            # Unified execution engine & thread concurrency")
+    _a("│   ├── results_store.py     # Results persistence, schema v2, atomic writes")
+    _a("│   ├── metadata.py          # Benchmark display metadata & category mapping")
     _a("│   ├── config.py            # Config loading & validation")
-    _a("│   ├── providers.py         # litellm wrapper (100+ providers)")
-    _a("│   ├── datasets.py          # HuggingFace dataset sampling")
-    _a("│   ├── benchmarks.py        # 8 benchmark implementations")
+    _a("│   ├── providers.py         # litellm wrapper & telemetry")
+    _a("│   ├── datasets.py          # Deterministic HuggingFace sampling")
+    _a("│   ├── benchmarks.py        # Benchmark implementations & verifiers")
     _a("│   ├── ifeval_verifiers.py  # 25 strict IFEval verifiers")
     _a("│   ├── charts.py            # matplotlib chart generation")
-    _a("│   └── readme_gen.py        # This README generator")
+    _a("│   └── readme_gen.py        # README generator")
     _a("├── results/                 # JSON results per run")
-    _a("│   ├── latest.json          # Most recent run")
-    _a("│   └── results_YYYYMMDD_HHMMSS.json")
-    _a("├── charts/                  # Generated PNG charts")
-    _a("    ├── leaderboard.png")
-    _a("    ├── categories.png")
-    _a("    ├── radar.png")
-    _a("    └── heatmap.png")
-    _a("└── tests/                   # Regression tests")
+    _a("│   └── latest.json          # Leaderboard results (schema v2)")
+    _a("└── charts/                  # Generated PNG charts")
     _a("```")
     _a("")
 
@@ -596,7 +379,7 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     _a("---")
     _a("")
-    _a(f"*Auto-generated by [lite-benchmarks](.) on {now}. Run `py run_benchmark.py` to update.*")
+    _a(f"*Auto-generated by [lite-benchmarks](.) on {now}. Use the Web Dashboard to update.*")
     _a("")
 
     return "\n".join(L)

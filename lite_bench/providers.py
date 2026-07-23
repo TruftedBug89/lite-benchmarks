@@ -3,6 +3,7 @@
 Tracks per-request telemetry:
   - Token counts: input, output, thinking (reasoning), total
   - Timing: total wall-clock time, tokens-per-second (cloud APIs only)
+  - Cost in USD (where supported by LiteLLM)
   - Local models (lm_studio/, ollama/) skip speed metrics since
     they reflect hardware, not model quality.
 """
@@ -12,11 +13,10 @@ from __future__ import annotations
 import time
 import warnings
 from dataclasses import dataclass
+from typing import Any
 
 import litellm
 from rich.console import Console
-
-from typing import Any
 
 from .config import ModelConfig, Settings
 
@@ -25,7 +25,7 @@ console = Console()
 litellm.suppress_debug_info = True
 
 # LiteLLM response objects trigger noisy Pydantic v2 serializer warnings
-# (optional fields not always populated).  Harmless — silence them.
+# (optional fields not always populated). Harmless — silence them.
 warnings.filterwarnings("ignore", message="Pydantic serializer warnings")
 
 LOCAL_PREFIXES = ("lm_studio/", "ollama/")
@@ -40,6 +40,7 @@ class GenerationResult:
     total_tokens: int = 0
     total_time_ms: float | None = None  # None for local models
     tokens_per_second: float | None = None  # None for local models
+    cost_usd: float | None = None
 
     @property
     def output_ratio(self) -> float:
@@ -65,6 +66,8 @@ class GenerationResult:
             d["total_time_ms"] = round(self.total_time_ms, 1)
         if self.tokens_per_second is not None:
             d["tokens_per_second"] = round(self.tokens_per_second, 2)
+        if self.cost_usd is not None:
+            d["cost_usd"] = round(self.cost_usd, 6)
         return d
 
 
@@ -88,10 +91,12 @@ def generate(model: ModelConfig | str, prompt: str, settings: Settings) -> Gener
     if isinstance(model, ModelConfig):
         model_id = model.id
         thinking_effort = model.thinking_effort
+        max_tokens = model.max_tokens or settings.max_tokens
         extra_params = model.extra_params
     else:
         model_id = model
         thinking_effort = None
+        max_tokens = settings.max_tokens
         extra_params = {}
 
     local = _is_local(model_id)
@@ -99,10 +104,10 @@ def generate(model: ModelConfig | str, prompt: str, settings: Settings) -> Gener
     kwargs: dict[str, Any] = {
         "model": model_id,
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": settings.max_tokens,
+        "max_tokens": max_tokens,
         "temperature": settings.temperature,
         "timeout": settings.request_timeout,
-        "num_retries": settings.max_retries,
+        "num_retries": 0,  # Engine handles retries with jitter
     }
 
     if thinking_effort:
@@ -115,7 +120,8 @@ def generate(model: ModelConfig | str, prompt: str, settings: Settings) -> Gener
         response = litellm.completion(**kwargs)
     except Exception as e:
         if "reasoning_effort" in kwargs and any(
-            msg in str(e).lower() for msg in ("unsupported", "unexpected keyword", "not supported", "invalid parameter")
+            msg in str(e).lower()
+            for msg in ("unsupported", "unexpected keyword", "not supported", "invalid parameter")
         ):
             kwargs.pop("reasoning_effort", None)
             response = litellm.completion(**kwargs)
@@ -138,6 +144,16 @@ def generate(model: ModelConfig | str, prompt: str, settings: Settings) -> Gener
     if not local and elapsed_ms > 0 and completion_tokens > 0:
         tps = completion_tokens / (elapsed_ms / 1000)
 
+    # Cost calculation via LiteLLM
+    cost_usd = None
+    if not local:
+        try:
+            cost_val = litellm.completion_cost(completion_response=response)
+            if isinstance(cost_val, (int, float)) and cost_val >= 0:
+                cost_usd = float(cost_val)
+        except Exception:
+            cost_usd = None
+
     choices = getattr(response, "choices", None)
     if not choices:
         raise RuntimeError("The provider returned no completion choices.")
@@ -153,5 +169,5 @@ def generate(model: ModelConfig | str, prompt: str, settings: Settings) -> Gener
         total_tokens=total_tokens,
         total_time_ms=time_ms,
         tokens_per_second=tps,
+        cost_usd=cost_usd,
     )
-

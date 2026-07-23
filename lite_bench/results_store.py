@@ -1,0 +1,197 @@
+"""Results persistence, atomic writing, schema v2, and aggregation."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+import datasets
+import litellm
+from rich.console import Console
+
+from .config import Config
+
+console = Console()
+
+SCHEMA_VERSION = 2
+
+FATAL_PATTERNS = (
+    "invalid_api_key",
+    "invalid api key",
+    "authentication_error",
+    "authenticationerror",
+    "unauthorized",
+    "account_deactivated",
+    "model_not_found",
+    "not_found_error",
+    "payment_required",
+    "insufficient_quota",
+    "credit balance is too low",
+)
+
+
+def is_fatal_error(exc: Exception) -> bool:
+    """Return True if an exception indicates an unrecoverable model/account failure."""
+    err_str = str(exc).lower()
+    return any(pattern in err_str for pattern in FATAL_PATTERNS)
+
+
+def _get_git_sha() -> str | None:
+    try:
+        import subprocess
+
+        res = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if res.returncode == 0:
+            return res.stdout.strip()
+    except Exception:
+        pass
+    return None
+
+
+def compute_question_hash(questions: list[dict]) -> str:
+    """Compute sha1 hash of question prompts/ids to track exact benchmark sample state."""
+    raw_str = "|".join(
+        str(q.get("question") or q.get("prompt") or q.get("id") or i)
+        for i, q in enumerate(questions)
+    )
+    return hashlib.sha1(raw_str.encode("utf-8")).hexdigest()[:12]
+
+
+def aggregate(mdata: dict, config: Config) -> None:
+    """Recompute summary rollups (scores, token totals) for a model entry in-place."""
+    enabled_names = set(config.enabled_benchmarks().keys())
+    completed = [
+        v for k, v in mdata.items()
+        if k in enabled_names and isinstance(v, dict) and "score" in v
+    ]
+
+    bench_scores = {k: mdata[k]["score"] for k in mdata if k in enabled_names and isinstance(mdata[k], dict) and "score" in mdata[k]}
+    overall = config.overall_score(bench_scores)
+
+    summary: dict = {
+        "overall_score": round(overall, 4) if overall is not None else None,
+        "completed_benchmarks": len(completed),
+        "total_input_tokens": sum(r.get("input_tokens", 0) for r in completed),
+        "total_output_tokens": sum(r.get("output_tokens", 0) for r in completed),
+        "total_thinking_tokens": sum(r.get("thinking_tokens", 0) for r in completed),
+        "total_all_tokens": sum(r.get("total_tokens", 0) for r in completed),
+    }
+
+    total_cost = sum(r.get("total_cost_usd") for r in completed if r.get("total_cost_usd") is not None)
+    summary["total_cost_usd"] = round(total_cost, 6) if total_cost > 0 else None
+
+    for cat in config.categories:
+        cat_s = config.category_score(bench_scores, cat)
+        summary[f"{cat}_score"] = round(cat_s, 4) if cat_s is not None else None
+
+    tps_vals = [r.get("avg_tokens_per_second") for r in completed if r.get("avg_tokens_per_second") is not None]
+    summary["avg_tokens_per_second"] = round(sum(tps_vals) / len(tps_vals), 2) if tps_vals else None
+
+    time_vals = [r.get("avg_time_ms") for r in completed if r.get("avg_time_ms") is not None]
+    summary["avg_time_ms"] = round(sum(time_vals) / len(time_vals), 1) if time_vals else None
+
+    mdata["summary"] = summary
+
+
+def _get_pkg_version(mod: any, name: str) -> str:
+    v = getattr(mod, "__version__", None) or getattr(mod, "version", None)
+    if v:
+        return str(v)
+    try:
+        import importlib.metadata
+
+        return importlib.metadata.version(name)
+    except Exception:
+        return "unknown"
+
+
+def save_results(
+    results: dict,
+    config: Config,
+    results_dir: str = "results",
+    filename: str = "latest.json",
+) -> str:
+    """Save results atomically using temp file and atomic replace."""
+    os.makedirs(results_dir, exist_ok=True)
+    target_path = Path(results_dir) / filename
+
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "environment": {
+            "python_version": sys.version.split()[0],
+            "litellm_version": _get_pkg_version(litellm, "litellm"),
+            "datasets_version": _get_pkg_version(datasets, "datasets"),
+            "git_sha": _get_git_sha(),
+        },
+        "settings": {
+            "seed": config.settings.seed,
+            "max_tokens": config.settings.max_tokens,
+            "temperature": config.settings.temperature,
+            "request_timeout": config.settings.request_timeout,
+            "max_retries": config.settings.max_retries,
+            "max_concurrency": config.settings.max_concurrency,
+        },
+        "models": results,
+    }
+
+    # Write atomically
+    dir_path = target_path.parent
+    with tempfile.NamedTemporaryFile("w", dir=dir_path, delete=False, encoding="utf-8") as tf:
+        json.dump(payload, tf, indent=2, ensure_ascii=False)
+        temp_name = tf.name
+
+    os.replace(temp_name, target_path)
+    return str(target_path)
+
+
+def load_latest_results(config: Config, path: str | Path = "results/latest.json") -> dict:
+    """Load latest results JSON, stripping zombie benchmark keys not in current config."""
+    p = Path(path)
+    if not p.is_file():
+        return {}
+
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception as e:
+        console.print(f"[yellow]Warning: Failed to parse {path}: {e}[/yellow]")
+        return {}
+
+    sv = data.get("schema_version")
+    if sv != SCHEMA_VERSION:
+        console.print(f"[dim]Note: {path} schema_version is {sv} (current is {SCHEMA_VERSION}).[/dim]")
+
+    models = data.get("models", {})
+    if not isinstance(models, dict):
+        return {}
+
+    enabled_keys = set(config.enabled_benchmarks().keys())
+    cleaned_models: dict = {}
+
+    for mname, mdata in models.items():
+        if not isinstance(mdata, dict):
+            continue
+        cleaned_mdata: dict = {}
+        for k, v in mdata.items():
+            if k in ("model_id", "thinking_effort", "summary"):
+                cleaned_mdata[k] = v
+            elif k in enabled_keys:
+                cleaned_mdata[k] = v
+            else:
+                console.print(f"[dim]Dropping stale benchmark key {k!r} from model {mname!r}[/dim]")
+        
+        # Re-aggregate
+        aggregate(cleaned_mdata, config)
+        cleaned_models[mname] = cleaned_mdata
+
+    return cleaned_models

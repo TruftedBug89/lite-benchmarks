@@ -183,7 +183,7 @@
       align-items: center;
       justify-content: center;
       gap: 0.5rem;
-      transition: all 0.25s;
+      transition: all 0.2s ease-out;
     }
 
     .btn-primary {
@@ -195,6 +195,10 @@
     .btn-primary:hover:not(:disabled) {
       transform: translateY(-2px);
       box-shadow: 0 6px 25px rgba(99, 102, 241, 0.5);
+    }
+
+    .btn-primary:active:not(:disabled) {
+      transform: translateY(0);
     }
 
     .btn-danger {
@@ -238,6 +242,7 @@
       align-items: center;
       justify-content: space-between;
       backdrop-filter: blur(12px);
+      gap: 1.5rem;
     }
 
     .stat-group {
@@ -263,6 +268,18 @@
       color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.05em;
+    }
+
+    .throughput-chart-container {
+      flex: 1;
+      height: 38px;
+      position: relative;
+    }
+
+    .throughput-chart-container canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
     }
 
     /* Models Cards Grid */
@@ -295,7 +312,7 @@
       display: flex;
       flex-direction: column;
       gap: 1rem;
-      transition: all 0.3s;
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
       position: relative;
       overflow: hidden;
     }
@@ -309,11 +326,11 @@
       height: 3px;
       background: var(--accent-primary);
       opacity: 0.6;
+      transition: background 0.3s ease;
     }
 
     .model-card.running::before {
       background: linear-gradient(90deg, var(--accent-cyan), var(--accent-primary));
-      animation: pulse-line 1.5s infinite alternate;
     }
 
     .model-card.finished::before {
@@ -324,15 +341,11 @@
       background: var(--accent-rose);
     }
 
-    @keyframes pulse-line {
-      0% { opacity: 0.4; }
-      100% { opacity: 1; }
-    }
-
     .model-card-header {
       display: flex;
       align-items: flex-start;
       justify-content: space-between;
+      gap: 1rem;
     }
 
     .model-name {
@@ -356,6 +369,7 @@
       display: flex;
       align-items: center;
       gap: 0.4rem;
+      white-space: nowrap;
     }
 
     .status-badge.running {
@@ -376,11 +390,60 @@
       border: 1px solid rgba(244, 63, 94, 0.3);
     }
 
+    /* Gauge & Metrics Section */
+    .card-top-section {
+      display: flex;
+      align-items: center;
+      gap: 1.2rem;
+    }
+
+    .gauge-wrapper {
+      position: relative;
+      width: 70px;
+      height: 70px;
+      flex-shrink: 0;
+    }
+
+    .gauge-svg {
+      width: 100%;
+      height: 100%;
+      transform: rotate(-90deg);
+    }
+
+    .gauge-bg {
+      fill: none;
+      stroke: rgba(255, 255, 255, 0.08);
+      stroke-width: 6;
+    }
+
+    .gauge-fill {
+      fill: none;
+      stroke: var(--accent-green);
+      stroke-width: 6;
+      stroke-linecap: round;
+      stroke-dasharray: 201;
+      stroke-dashoffset: 201;
+      transition: stroke-dashoffset 0.4s ease-out, stroke 0.3s ease;
+    }
+
+    .gauge-text {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 800;
+      font-size: 0.85rem;
+      color: var(--text-main);
+    }
+
     /* Progress bar */
     .progress-bar-container {
       display: flex;
       flex-direction: column;
       gap: 0.35rem;
+      flex: 1;
     }
 
     .progress-bar-track {
@@ -395,7 +458,7 @@
       height: 100%;
       background: linear-gradient(90deg, var(--accent-primary), var(--accent-cyan));
       border-radius: 4px;
-      transition: width 0.3s ease;
+      transition: width 0.35s ease-out;
     }
 
     .card-metrics {
@@ -406,6 +469,7 @@
       padding: 0.6rem 0.75rem;
       border-radius: 10px;
       border: 1px solid rgba(255, 255, 255, 0.04);
+      align-items: center;
     }
 
     .metric-item {
@@ -423,6 +487,12 @@
       color: var(--text-dim);
     }
 
+    .sparkline-canvas {
+      width: 100%;
+      height: 24px;
+      display: block;
+    }
+
     /* Live Output Box */
     .output-box {
       background: rgba(9, 13, 22, 0.9);
@@ -432,13 +502,13 @@
       font-family: 'JetBrains Mono', monospace;
       font-size: 0.78rem;
       color: var(--text-muted);
-      height: 60px;
+      height: 52px;
       overflow: hidden;
       white-space: nowrap;
       text-overflow: ellipsis;
     }
 
-    /* Leaderboard Table */
+    /* Leaderboard Table & FLIP Transitions */
     .leaderboard-card {
       background: var(--bg-card);
       border: 1px solid var(--border-color);
@@ -468,10 +538,50 @@
       padding: 0.85rem 1rem;
       font-size: 0.88rem;
       border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      transition: background 0.2s;
+    }
+
+    .custom-table tr {
+      transition: transform 0.4s ease-out, opacity 0.3s ease;
     }
 
     .custom-table tr:hover td {
-      background: rgba(255, 255, 255, 0.02);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .table-score-bar-bg {
+      width: 100px;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 3px;
+      overflow: hidden;
+      display: inline-block;
+      vertical-align: middle;
+      margin-left: 0.6rem;
+    }
+
+    .table-score-bar-fill {
+      height: 100%;
+      background: var(--accent-green);
+      border-radius: 3px;
+      transition: width 0.35s ease-out;
+    }
+
+    /* Log Box Slide Animation */
+    .log-line {
+      animation: fadeInSlide 0.25s ease-out forwards;
+      line-height: 1.5;
+    }
+
+    @keyframes fadeInSlide {
+      from {
+        opacity: 0;
+        transform: translateY(4px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
     /* Modal */
@@ -502,6 +612,16 @@
       gap: 1rem;
       max-height: 80vh;
       overflow-y: auto;
+    }
+
+    /* Accessibility / Reduced Motion */
+    @media (prefers-reduced-motion: reduce) {
+      *, ::before, ::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
     }
   </style>
 </head>
@@ -537,7 +657,7 @@
 
     <!-- Global Provider Settings -->
     <div class="section-card">
-      <div class="section-title">⚡ Reasoning & API Setup</div>
+      <div class="section-title">⚡ Reasoning & Setup</div>
 
       <div class="form-group">
         <label class="form-label">Thinking Effort</label>
@@ -548,16 +668,6 @@
           <option value="medium">Medium</option>
           <option value="low">Low</option>
         </select>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Custom API Base URL (Ollama / Local)</label>
-        <input type="text" class="form-input" id="custom-api-base" placeholder="http://localhost:1234/v1">
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">API Key / Token (Optional)</label>
-        <input type="password" class="form-input" id="custom-api-key" placeholder="sk-...">
       </div>
     </div>
 
@@ -604,8 +714,12 @@
         </div>
       </div>
 
+      <div class="throughput-chart-container">
+        <canvas id="throughput-canvas"></canvas>
+      </div>
+
       <div style="display: flex; gap: 0.5rem;">
-        <button class="btn btn-secondary" onclick="generateReports()">📊 Generate Charts & README</button>
+        <button class="btn btn-secondary" onclick="generateReports()">📊 Generate Reports</button>
       </div>
     </div>
 
@@ -615,7 +729,7 @@
         <div class="grid-title">📊 Live Model Execution Grid</div>
       </div>
       <div class="models-grid" id="live-cards-grid">
-        <div style="grid-column: 1 / -1; padding: 3rem; text-align: center; color: var(--text-dim);">
+        <div id="empty-cards-notice" style="grid-column: 1 / -1; padding: 3rem; text-align: center; color: var(--text-dim);">
           No benchmark run active. Select models and click <strong>🚀 Start Run</strong>.
         </div>
       </div>
@@ -637,7 +751,7 @@
           </tr>
         </thead>
         <tbody id="leaderboard-tbody">
-          <tr>
+          <tr id="empty-leaderboard-notice">
             <td colspan="7" style="text-align: center; color: var(--text-dim); padding: 2rem;">
               No leaderboard data yet.
             </td>
@@ -649,8 +763,8 @@
     <!-- Live Event Logs -->
     <div class="section-card">
       <div class="section-title">📜 Real-time System Log</div>
-      <div id="system-log-box" style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--text-muted); max-height: 120px; overflow-y: auto;">
-        <div>[System Ready] Web dashboard connected.</div>
+      <div id="system-log-box" style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--text-muted); max-height: 140px; overflow-y: auto;">
+        <div class="log-line">[System Ready] Web dashboard connected.</div>
       </div>
     </div>
   </div>
@@ -694,6 +808,13 @@
   let customModels = [];
   let isRunning = false;
 
+  // Persistent DOM Node maps for persistent-diff updates
+  const cardNodesMap = new Map();
+  const rowNodesMap = new Map();
+  const sparklineHistories = new Map(); // mname -> array of TPS floats
+  let throughputHistory = []; // array of { time: Date, totalTokens: number }
+  let lastLogCount = 0;
+
   async function loadConfig() {
     try {
       const res = await fetch('/api/config');
@@ -718,10 +839,11 @@
 
     // Render Benchmarks
     const benchContainer = document.getElementById('benchmarks-list');
-    benchContainer.innerHTML = configData.benchmarks.map(b => `
+    const bEntries = Object.entries(configData.benchmarks);
+    benchContainer.innerHTML = bEntries.map(([key, b]) => `
       <label class="checkbox-item">
-        <input type="checkbox" class="bench-check" value="${b.name}" ${b.enabled ? 'checked' : ''}>
-        <span>${b.name} <small style="color:var(--text-dim)">(${b.category})</small></span>
+        <input type="checkbox" class="bench-check" value="${key}" ${b.enabled ? 'checked' : ''}>
+        <span>${b.display || b.name} <small style="color:var(--text-dim)">(${b.category})</small></span>
       </label>
     `).join('');
   }
@@ -752,14 +874,10 @@
     const selectedModels = Array.from(document.querySelectorAll('.model-check:checked')).map(cb => {
       const id = cb.value;
       const name = cb.getAttribute('data-name');
-      const baseApi = document.getElementById('custom-api-base').value.trim();
-      const apiKey = document.getElementById('custom-api-key').value.trim();
       return {
         id,
         name,
         thinking_effort: document.getElementById('thinking-effort-select').value,
-        api_base: baseApi || undefined,
-        api_key: apiKey || undefined
       };
     });
 
@@ -775,7 +893,7 @@
       benchmarks: selectedBench,
       settings: {
         num_samples: parseInt(document.getElementById('num-samples-input').value) || 20,
-        model_concurrency: parseInt(document.getElementById('concurrency-input').value) || 4,
+        max_concurrency: parseInt(document.getElementById('concurrency-input').value) || 4,
         allow_unsafe_code_execution: document.getElementById('unsafe-code-checkbox').checked,
         thinking_effort: document.getElementById('thinking-effort-select').value
       }
@@ -818,15 +936,25 @@
     }
   }
 
-  // Connect SSE for Real-time Streaming Updates
   function initStream() {
-    const eventSource = new EventSource('/api/stream');
+    const ssePath = '/api/events';
+    const eventSource = new EventSource(ssePath);
+
     eventSource.onmessage = (event) => {
-      const status = JSON.parse(event.data);
-      updateDashboard(status);
+      try {
+        const status = JSON.parse(event.data);
+        updateDashboard(status);
+      } catch (err) {
+        console.error("SSE parse error:", err);
+      }
+    };
+
+    eventSource.onerror = () => {
+      // Reconnect handled natively by EventSource
     };
   }
 
+  // Persistent-DOM Dashboard Renderer
   function updateDashboard(status) {
     isRunning = status.is_running;
 
@@ -839,95 +967,321 @@
     }
 
     // Top Stats
-    const m = Math.floor(status.elapsed_seconds / 60);
-    const s = status.elapsed_seconds % 60;
+    const elapsed = status.elapsed_seconds || 0;
+    const m = Math.floor(elapsed / 60);
+    const s = Math.floor(elapsed % 60);
     document.getElementById('elapsed-time-stat').innerText = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 
-    const states = Object.values(status.states || {});
-    document.getElementById('active-models-stat').innerText = states.filter(st => !st.is_finished && !st.is_failed).length;
-    
+    const statesObj = status.models || {};
+    const states = Object.values(statesObj);
+    const activeCount = states.filter(st => !st.is_finished && !st.is_failed).length;
+    document.getElementById('active-models-stat').innerText = activeCount;
+
     const totalTokens = states.reduce((acc, st) => acc + (st.total_tokens || 0), 0);
     document.getElementById('total-tokens-stat').innerText = totalTokens.toLocaleString();
 
-    // Logs
-    if (status.logs) {
+    // Throughput Chart Data
+    throughputHistory.push({ time: new Date(), totalTokens });
+    if (throughputHistory.length > 40) throughputHistory.shift();
+    drawThroughputChart();
+
+    // Logs rendering (append only new lines with animation)
+    if (status.logs && status.logs.length > 0) {
       const logBox = document.getElementById('system-log-box');
-      logBox.innerHTML = status.logs.map(l => `<div>${l}</div>`).join('');
-      logBox.scrollTop = logBox.scrollHeight;
+      if (status.logs.length !== lastLogCount) {
+        logBox.innerHTML = status.logs.map(l => `<div class="log-line">${escapeHtml(l)}</div>`).join('');
+        logBox.scrollTop = logBox.scrollHeight;
+        lastLogCount = status.logs.length;
+      }
     }
 
-    // Model Grid Cards
+    // Render Cards using Persistent DOM Diffing
+    renderModelCards(states);
+
+    // Render Leaderboard using FLIP Row Reordering
+    renderLeaderboard(states);
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // Model Cards Persistent Renderer
+  function renderModelCards(states) {
     const grid = document.getElementById('live-cards-grid');
+    const emptyNotice = document.getElementById('empty-cards-notice');
+
     if (states.length === 0) {
-      grid.innerHTML = `<div style="grid-column: 1 / -1; padding: 3rem; text-align: center; color: var(--text-dim);">No benchmark run active. Select models and click <strong>🚀 Start Run</strong>.</div>`;
-    } else {
-      grid.innerHTML = states.map(st => {
-        let badgeClass = "running";
-        if (st.is_failed) badgeClass = "failed";
-        else if (st.is_finished) badgeClass = "finished";
+      if (emptyNotice) emptyNotice.style.display = 'block';
+      cardNodesMap.forEach(node => node.remove());
+      cardNodesMap.clear();
+      return;
+    }
+    if (emptyNotice) emptyNotice.style.display = 'none';
 
-        const pct = st.q_total > 0 ? (st.q_index / st.q_total * 100) : 0;
-        const acc = st.accuracy !== null ? `${(st.accuracy * 100).toFixed(1)}%` : 'N/A';
+    const currentNames = new Set(states.map(st => st.name));
 
-        return `
-          <div class="model-card ${badgeClass}">
-            <div class="model-card-header">
-              <div>
-                <div class="model-name">${st.name}</div>
-                <div class="model-id">${st.id}</div>
-              </div>
-              <div class="status-badge ${badgeClass}">${st.status}</div>
-            </div>
-
-            <div class="progress-bar-container">
-              <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:var(--text-muted)">
-                <span>${st.current_benchmark_display || 'Benchmarking'}</span>
-                <span>${st.q_index}/${st.q_total} (${pct.toFixed(0)}%)</span>
-              </div>
-              <div class="progress-bar-track">
-                <div class="progress-bar-fill" style="width: ${pct}%"></div>
-              </div>
-            </div>
-
-            <div class="card-metrics">
-              <div class="metric-item">
-                <div class="metric-val" style="color:var(--accent-green)">${acc}</div>
-                <div class="metric-lbl">Accuracy</div>
-              </div>
-              <div class="metric-item">
-                <div class="metric-val">${st.correct}/${st.scored}</div>
-                <div class="metric-lbl">Scored</div>
-              </div>
-              <div class="metric-item">
-                <div class="metric-val" style="color:var(--accent-cyan)">${st.avg_tps || '—'}</div>
-                <div class="metric-lbl">Tokens/s</div>
-              </div>
-            </div>
-
-            <div class="output-box">${st.latest_snippet || 'Awaiting response generation...'}</div>
-          </div>
-        `;
-      }).join('');
+    // Remove obsolete cards
+    for (const [mname, node] of cardNodesMap.entries()) {
+      if (!currentNames.has(mname)) {
+        node.remove();
+        cardNodesMap.delete(mname);
+        sparklineHistories.delete(mname);
+      }
     }
 
-    // Leaderboard
+    // Update or create cards
+    states.forEach(st => {
+      let card = cardNodesMap.get(st.name);
+      if (!card) {
+        card = createCardDOM(st.name, st.id);
+        grid.appendChild(card);
+        cardNodesMap.set(st.name, card);
+        sparklineHistories.set(st.name, []);
+      }
+      updateCardDOM(card, st);
+    });
+  }
+
+  function createCardDOM(name, id) {
+    const card = document.createElement('div');
+    card.className = 'model-card';
+    card.innerHTML = `
+      <div class="model-card-header">
+        <div>
+          <div class="model-name">${escapeHtml(name)}</div>
+          <div class="model-id">${escapeHtml(id)}</div>
+        </div>
+        <div class="status-badge">Idle</div>
+      </div>
+
+      <div class="card-top-section">
+        <div class="gauge-wrapper">
+          <svg class="gauge-svg" viewBox="0 0 70 70">
+            <circle class="gauge-bg" cx="35" cy="35" r="32"></circle>
+            <circle class="gauge-fill" cx="35" cy="35" r="32"></circle>
+          </svg>
+          <div class="gauge-text">0%</div>
+        </div>
+
+        <div class="progress-bar-container">
+          <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:var(--text-muted)">
+            <span class="bench-label">Benchmarking</span>
+            <span class="q-counter">0/0 (0%)</span>
+          </div>
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" style="width: 0%"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-metrics">
+        <div class="metric-item">
+          <div class="metric-val scored-val">0/0</div>
+          <div class="metric-lbl">Scored</div>
+        </div>
+        <div class="metric-item">
+          <div class="metric-val tps-val" style="color:var(--accent-cyan)">—</div>
+          <div class="metric-lbl">Tokens/s</div>
+        </div>
+        <div class="metric-item">
+          <canvas class="sparkline-canvas" width="90" height="24"></canvas>
+          <div class="metric-lbl">Speed Trend</div>
+        </div>
+      </div>
+
+      <div class="output-box">Awaiting response generation...</div>
+    `;
+    return card;
+  }
+
+  function updateCardDOM(card, st) {
+    let badgeClass = "running";
+    if (st.is_failed) badgeClass = "failed";
+    else if (st.is_finished) badgeClass = "finished";
+
+    card.className = `model-card ${badgeClass}`;
+
+    const badge = card.querySelector('.status-badge');
+    badge.className = `status-badge ${badgeClass}`;
+    badge.innerText = st.status || "Running";
+
+    const pct = st.q_total > 0 ? (st.q_index / st.q_total * 100) : 0;
+    const accFloat = st.accuracy !== null && st.accuracy !== undefined ? st.accuracy * 100 : 0;
+    const accStr = st.accuracy !== null && st.accuracy !== undefined ? `${accFloat.toFixed(1)}%` : '0%';
+
+    // Gauge circle stroke-dashoffset: radius 32 -> circumference ~201
+    const circumference = 201;
+    const offset = circumference - (accFloat / 100 * circumference);
+    const gaugeFill = card.querySelector('.gauge-fill');
+    gaugeFill.style.strokeDashoffset = offset;
+    card.querySelector('.gauge-text').innerText = accStr;
+
+    card.querySelector('.bench-label').innerText = st.current_benchmark_display || st.current_benchmark || 'Benchmarking';
+    card.querySelector('.q-counter').innerText = `${st.q_index}/${st.q_total} (${pct.toFixed(0)}%)`;
+    card.querySelector('.progress-bar-fill').style.width = `${pct}%`;
+
+    card.querySelector('.scored-val').innerText = `${st.correct}/${st.scored}`;
+    card.querySelector('.tps-val').innerText = st.avg_tps ? `${st.avg_tps}/s` : '—';
+    card.querySelector('.output-box').innerText = st.latest_snippet || 'Awaiting response generation...';
+
+    // Update TPS sparkline
+    const hist = sparklineHistories.get(st.name) || [];
+    if (st.avg_tps) hist.push(st.avg_tps);
+    if (hist.length > 25) hist.shift();
+    drawSparkline(card.querySelector('.sparkline-canvas'), hist);
+  }
+
+  function drawSparkline(canvas, data) {
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    if (data.length < 2) return;
+
+    const max = Math.max(...data, 10);
+    const min = Math.min(...data, 0);
+
+    ctx.beginPath();
+    ctx.strokeStyle = '#06b6d4';
+    ctx.lineWidth = 1.5;
+
+    for (let i = 0; i < data.length; i++) {
+      const x = (i / (data.length - 1)) * w;
+      const y = h - ((data[i] - min) / (max - min || 1)) * (h - 4) - 2;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  function drawThroughputChart() {
+    const canvas = document.getElementById('throughput-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+    const w = canvas.width;
+    const h = canvas.height;
+
+    ctx.clearRect(0, 0, w, h);
+    if (throughputHistory.length < 2) return;
+
+    const rates = [];
+    for (let i = 1; i < throughputHistory.length; i++) {
+      const dt = (throughputHistory[i].time - throughputHistory[i-1].time) / 1000;
+      const dtok = throughputHistory[i].totalTokens - throughputHistory[i-1].totalTokens;
+      rates.push(dt > 0 ? dtok / dt : 0);
+    }
+    if (rates.length === 0) return;
+
+    const max = Math.max(...rates, 10);
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(99, 102, 241, 0.8)';
+    ctx.lineWidth = 2;
+
+    for (let i = 0; i < rates.length; i++) {
+      const x = (i / (rates.length - 1)) * w;
+      const y = h - (rates[i] / max) * (h - 6) - 3;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Fill gradient
+    ctx.lineTo(w, h);
+    ctx.lineTo(0, h);
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, 'rgba(99, 102, 241, 0.25)');
+    grad.addColorStop(1, 'rgba(99, 102, 241, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.fill();
+  }
+
+  // Leaderboard Persistent FLIP Renderer
+  function renderLeaderboard(states) {
     const tbody = document.getElementById('leaderboard-tbody');
+    const emptyNotice = document.getElementById('empty-leaderboard-notice');
+
     if (states.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-dim); padding: 2rem;">No leaderboard data yet.</td></tr>`;
-    } else {
-      const sorted = [...states].sort((a, b) => (b.accuracy || -1) - (a.accuracy || -1));
-      const medals = ['🥇 1st', '🥈 2nd', '🥉 3rd'];
-      tbody.innerHTML = sorted.map((st, idx) => `
-        <tr>
-          <td><strong>${medals[idx] || (idx + 1) + 'th'}</strong></td>
-          <td><strong>${st.name}</strong></td>
-          <td style="color:var(--accent-green); font-weight:700">${st.accuracy !== null ? (st.accuracy * 100).toFixed(1) + '%' : 'N/A'}</td>
-          <td>${st.scored}/${st.q_total}</td>
-          <td>${(st.total_tokens || 0).toLocaleString()}</td>
-          <td>${st.avg_tps ? st.avg_tps + '/s' : '—'}</td>
-          <td><span class="status-badge ${st.is_failed ? 'failed' : (st.is_finished ? 'finished' : 'running')}">${st.status}</span></td>
-        </tr>
-      `).join('');
+      if (emptyNotice) emptyNotice.style.display = 'table-row';
+      rowNodesMap.forEach(row => row.remove());
+      rowNodesMap.clear();
+      return;
+    }
+    if (emptyNotice) emptyNotice.style.display = 'none';
+
+    // Sort by accuracy descending
+    const sorted = [...states].sort((a, b) => (b.accuracy || -1) - (a.accuracy || -1));
+
+    // FLIP: First - Record current Y positions
+    const firstPositions = new Map();
+    rowNodesMap.forEach((row, mname) => {
+      firstPositions.set(mname, row.getBoundingClientRect().top);
+    });
+
+    const currentNames = new Set(states.map(st => st.name));
+    for (const [mname, row] of rowNodesMap.entries()) {
+      if (!currentNames.has(mname)) {
+        row.remove();
+        rowNodesMap.delete(mname);
+      }
+    }
+
+    const medals = ['🥇 1st', '🥈 2nd', '🥉 3rd'];
+
+    // Update / Create rows and append in sorted order
+    sorted.forEach((st, idx) => {
+      let row = rowNodesMap.get(st.name);
+      if (!row) {
+        row = document.createElement('tr');
+        rowNodesMap.set(st.name, row);
+      }
+
+      const accPct = st.accuracy !== null && st.accuracy !== undefined ? (st.accuracy * 100).toFixed(1) : 'N/A';
+      const accNum = st.accuracy !== null && st.accuracy !== undefined ? st.accuracy * 100 : 0;
+      const rankText = medals[idx] || `${idx + 1}th`;
+
+      row.innerHTML = `
+        <td><strong>${rankText}</strong></td>
+        <td><strong>${escapeHtml(st.name)}</strong></td>
+        <td>
+          <span style="color:var(--accent-green); font-weight:700">${accPct}%</span>
+          <div class="table-score-bar-bg">
+            <div class="table-score-bar-fill" style="width: ${accNum}%"></div>
+          </div>
+        </td>
+        <td>${st.scored}/${st.q_total}</td>
+        <td>${(st.total_tokens || 0).toLocaleString()}</td>
+        <td>${st.avg_tps ? st.avg_tps + '/s' : '—'}</td>
+        <td><span class="status-badge ${st.is_failed ? 'failed' : (st.is_finished ? 'finished' : 'running')}">${st.status || 'Running'}</span></td>
+      `;
+
+      tbody.appendChild(row);
+    });
+
+    // FLIP: Last, Invert, Play
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!prefersReducedMotion) {
+      sorted.forEach(st => {
+        const row = rowNodesMap.get(st.name);
+        const firstY = firstPositions.get(st.name);
+        if (firstY !== undefined && row) {
+          const lastY = row.getBoundingClientRect().top;
+          const deltaY = firstY - lastY;
+          if (deltaY !== 0) {
+            row.style.transform = `translateY(${deltaY}px)`;
+            row.style.transition = 'none';
+            requestAnimationFrame(() => {
+              row.style.transition = 'transform 0.4s ease-out';
+              row.style.transform = 'translateY(0)';
+            });
+          }
+        }
+      });
     }
   }
 

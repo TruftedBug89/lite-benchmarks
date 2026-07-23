@@ -18,8 +18,8 @@ class ModelConfig:
     id: str
     name: str
     thinking_effort: str | None = None
+    max_tokens: int | None = None
     extra_params: dict[str, Any] = field(default_factory=dict)
-
 
 
 @dataclass(frozen=True)
@@ -137,6 +137,9 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         thinking_effort = item.get("thinking_effort")
         if thinking_effort is not None:
             thinking_effort = _string(thinking_effort, f"models[{index}].thinking_effort")
+        max_tokens_val = item.get("max_tokens")
+        if max_tokens_val is not None:
+            max_tokens_val = _positive_int(max_tokens_val, f"models[{index}].max_tokens")
         extra_params = item.get("extra_params", {})
         if not isinstance(extra_params, Mapping):
             raise ValueError(f"models[{index}].extra_params must be a mapping.")
@@ -145,6 +148,7 @@ def load_config(path: str | Path = "config.yaml") -> Config:
                 id=model_id,
                 name=name,
                 thinking_effort=thinking_effort,
+                max_tokens=max_tokens_val,
                 extra_params=dict(extra_params),
             )
         )

@@ -1,12 +1,12 @@
-"""Tests for HLE, SciCode, and TauBench benchmarks."""
+"""Tests for SuperGPQA, SciCode, and TauBench benchmarks."""
 
 from __future__ import annotations
 
 import unittest
 
 from lite_bench.benchmarks import (
-    HLEBenchmark,
     SciCodeBenchmark,
+    SuperGPQABenchmark,
     TauBenchBenchmark,
 )
 from lite_bench.config import BenchmarkConfig, Settings
@@ -22,20 +22,21 @@ class NewBenchmarksTests(unittest.TestCase):
             num_samples=10,
         )
 
-    def test_hle_benchmark(self) -> None:
-        bench = HLEBenchmark(self.dummy_config, self.settings)
-        q = {"question": "What is the capital of France?", "answer": "Paris"}
+    def test_supergpqa_benchmark(self) -> None:
+        bench = SuperGPQABenchmark(self.dummy_config, self.settings)
+        q = {
+            "question": "What is the capital of France?",
+            "difficulty": "hard",
+            "options": ["Paris", "London", "Berlin", "Madrid"],
+            "answer_letter": "A",
+        }
         prompt = bench.format_prompt(q)
-        self.assertIn("Humanity's Last Exam", prompt)
         self.assertIn("What is the capital of France?", prompt)
+        self.assertIn("A. Paris", prompt)
 
-        # Test boxed evaluation
-        self.assertEqual(bench.evaluate(q, "The answer is \\boxed{Paris}."), 1.0)
-        self.assertEqual(bench.evaluate(q, "The answer is \\boxed{London}."), 0.0)
-
-        # Test choice answer
-        q_choice = {"question": "Select option A or B", "answer": "A"}
-        self.assertEqual(bench.evaluate(q_choice, "Answer: A"), 1.0)
+        # Test evaluation
+        self.assertEqual(bench.evaluate(q, "The answer is A."), 1.0)
+        self.assertEqual(bench.evaluate(q, "The answer is B."), 0.0)
 
     def test_scicode_benchmark(self) -> None:
         bench = SciCodeBenchmark(self.dummy_config, self.settings)

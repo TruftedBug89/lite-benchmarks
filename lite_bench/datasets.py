@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import random
+
 from datasets import load_dataset
 from rich.console import Console
 
@@ -54,15 +56,13 @@ def load_questions(bench: BenchmarkConfig, settings: Settings) -> list[dict]:
     n = min(bench.num_samples, available)
     if available <= n:
         indices = list(range(available))
-    elif n == 1:
-        indices = [available - 1]
     else:
-        indices = [int(i * (available - 1) / (n - 1)) for i in range(n)]
+        rng = random.Random(settings.seed)
+        indices = sorted(rng.sample(range(available), n))
 
     ds = ds.select(indices)
 
     questions = [dict(row) for row in ds]
     _cache[cache_key] = questions
-    console.print(f"  [dim]Sampled {len(questions)} questions from {available} available (uniform strided)[/dim]")
+    console.print(f"  [dim]Sampled {len(questions)} questions from {available} available (seeded random sample)[/dim]")
     return questions
-

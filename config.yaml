@@ -1,26 +1,32 @@
 # Lite Benchmarks Configuration
 # API keys are read from environment variables by litellm automatically:
 #   DEEPSEEK_API_KEY, GROQ_API_KEY, GEMINI_API_KEY (or GOOGLE_API_KEY), OPENAI_API_KEY, ANTHROPIC_API_KEY
-#   Ollama needs no key — just a running server at localhost:11434
+#   LM Studio needs no key — just a running server at localhost:1234
 
 # litellm model IDs: "provider/model-name"
 # thinking_effort can be: max, high, xhigh, ultracode, medium, low
+# max_tokens can be specified per model for high-reasoning models (e.g. max_tokens: 16384)
 models:
   - id: anthropic/claude-3-7-sonnet-20250219
     name: Claude 3.7 Sonnet (Max Thinking)
     thinking_effort: max
+    max_tokens: 16384
   - id: openai/o3-mini
     name: o3-mini (High Thinking)
     thinking_effort: high
+    max_tokens: 16384
   - id: gemini/gemini-2.5-pro
     name: Gemini 2.5 Pro (Max Thinking)
     thinking_effort: max
+    max_tokens: 16384
   - id: gemini/gemini-2.5-flash
     name: Gemini 2.5 Flash (Max Thinking)
     thinking_effort: max
+    max_tokens: 16384
   - id: deepseek/deepseek-reasoner
     name: DeepSeek R1 (Max Thinking)
     thinking_effort: max
+    max_tokens: 16384
   - id: deepseek/deepseek-chat
     name: DeepSeek V3
   - id: groq/llama-3.3-70b-versatile
@@ -41,10 +47,11 @@ categories:
   math:
     benchmarks: [aime, math_500]
   knowledge:
-    benchmarks: [mmlu_pro, hle]
+    benchmarks: [mmlu_pro, supergpqa]
   instruction:
     benchmarks: [ifeval, tau_bench]
 
+# Optional `revision` parameter pins exact HuggingFace git commit SHAs for reproducibility.
 benchmarks:
   bigcodebench_hard:
     enabled: true
@@ -56,6 +63,7 @@ benchmarks:
     dataset: evalplus/humanevalplus
     split: test
     num_samples: 50
+    # revision: "e1f2a3b..."
   mbppplus:
     enabled: true
     dataset: evalplus/mbppplus
@@ -96,10 +104,10 @@ benchmarks:
     dataset: SciCode1/SciCode
     split: test
     num_samples: 50
-  hle:
+  supergpqa:
     enabled: true
-    dataset: cais/hle
-    split: test
+    dataset: m-a-p/SuperGPQA
+    split: train
     num_samples: 50
   tau_bench:
     enabled: true
@@ -117,7 +125,6 @@ settings:
   max_concurrency: 5
   results_dir: results
   charts_dir: charts
-  # HuggingFace token for gated datasets.
+  # HuggingFace token for gated datasets (e.g. cais/hle).
   # Set HF_TOKEN env var or leave empty for public-only datasets.
   hf_token_env: HF_TOKEN
-

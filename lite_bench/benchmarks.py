@@ -1,16 +1,10 @@
-"""Benchmark implementations using real datasets with built-in verification.
-
-Eight benchmarks across five categories:
-  Coding:      HumanEval+ (EvalPlus), MBPP+ (EvalPlus), BigCodeBench (unittest)
-  Science:     GPQA Diamond (grad-level MC), ARC-Challenge (science MC)
-  Math:        GSM8K (numerical exact match)
-  Knowledge:   MMLU-Pro (10-choice MC)
-  Instruction: IFEval (programmatic verifiers)
-"""
+"""Benchmark implementations using real datasets with built-in verification."""
 
 from __future__ import annotations
 
+import json
 import os
+import random
 import re
 import subprocess
 import sys
@@ -48,7 +42,7 @@ def _extract_number(text: str) -> str | None:
     m = re.search(r"####\s*(-?[\d,]+(?:\.\d+)?)", text)
     if m:
         return m.group(1).replace(",", "").strip()
-    
+
     boxed = _extract_boxed(text)
     if boxed:
         m_boxed = re.search(r"^-?[\d,]+(?:\.\d+)?$", boxed.replace(",", "").strip())
@@ -90,9 +84,9 @@ def _extract_letter(response: str, valid: set[str] | None = None) -> str | None:
 
     # Fallback to general scan in reverse
     letter_matches = re.findall(r"\b([A-Ja-j])\b", response)
-    for l in reversed(letter_matches):
-        if l.upper() in valid_upper:
-            return l.upper()
+    for letter in reversed(letter_matches):
+        if letter.upper() in valid_upper:
+            return letter.upper()
 
     stripped = response.strip()
     if stripped and stripped[0].upper() in valid_upper:
@@ -161,9 +155,15 @@ class BenchmarkBase(ABC):
         self.settings = settings
         self._questions: list[dict] | None = None
 
+    def prepare(self, raw: dict) -> dict:
+        """Hook to normalize/prepare a raw question dict once upon loading."""
+        return dict(raw)
+
     def load(self) -> list[dict]:
         if self._questions is None:
-            self._questions = load_questions(self.config, self.settings)
+            raw_qs = load_questions(self.config, self.settings)
+            prepared = [self.prepare(q) for q in raw_qs]
+            self._questions = [q for q in prepared if not q.get("_skip", False)]
         return self._questions
 
     @abstractmethod
@@ -268,19 +268,45 @@ class GPQABenchmark(BenchmarkBase):
     name = "gpqa"
     display_name = "GPQA Diamond"
 
-    def format_prompt(self, q: dict) -> str:
-        question = q.get("question") or q.get("Question", "")
+    def prepare(self, raw: dict) -> dict:
+        q = raw
+        question_text = q.get("question") or q.get("Question", "")
         options = q.get("options") or q.get("choices")
+        gold_letter = None
+
         if not options and "Correct Answer" in q:
             correct = q["Correct Answer"]
             inc1 = q.get("Incorrect Answer 1", "")
             inc2 = q.get("Incorrect Answer 2", "")
             inc3 = q.get("Incorrect Answer 3", "")
             raw_choices = [correct, inc1, inc2, inc3]
-            h = sum(ord(c) for c in str(question))
+            rng = random.Random(f"{self.settings.seed}:{question_text}")
             indices = list(range(4))
-            indices.sort(key=lambda i: (h * (i + 1) * 31) % 1009)
+            rng.shuffle(indices)
             options = [raw_choices[i] for i in indices]
+            try:
+                gold_idx = options.index(correct)
+                gold_letter = chr(65 + gold_idx)
+            except ValueError:
+                pass
+
+        if not gold_letter:
+            solution = str(q.get("solution") or q.get("answer") or "")
+            m = re.search(r"[Aa]nswer:\s*([A-Da-d])", solution)
+            if m:
+                gold_letter = m.group(1).upper()
+            elif solution.strip().upper() in {"A", "B", "C", "D"}:
+                gold_letter = solution.strip().upper()
+
+        q["options"] = options
+        q["gold_letter"] = gold_letter
+        return q
+
+    def format_prompt(self, q: dict) -> str:
+        if "options" not in q or q.get("options") is None:
+            q = self.prepare(q)
+        question = q.get("question") or q.get("Question", "")
+        options = q.get("options")
 
         if options and isinstance(options, list):
             opts_str = "\n".join(f"{chr(65 + i)}. {o}" for i, o in enumerate(options))
@@ -297,35 +323,12 @@ class GPQABenchmark(BenchmarkBase):
         )
 
     def evaluate(self, q: dict, response: str) -> float:
-        gold = None
-        if "Correct Answer" in q:
-            correct = q["Correct Answer"]
-            question = q.get("question") or q.get("Question", "")
-            inc1 = q.get("Incorrect Answer 1", "")
-            inc2 = q.get("Incorrect Answer 2", "")
-            inc3 = q.get("Incorrect Answer 3", "")
-            raw_choices = [correct, inc1, inc2, inc3]
-            h = sum(ord(c) for c in str(question))
-            indices = list(range(4))
-            indices.sort(key=lambda i: (h * (i + 1) * 31) % 1009)
-            options = [raw_choices[i] for i in indices]
-            try:
-                gold_idx = options.index(correct)
-                gold = chr(65 + gold_idx)
-            except ValueError:
-                pass
-
+        gold = q.get("gold_letter")
         if not gold:
-            solution = str(q.get("solution") or q.get("answer") or "")
-            m = re.search(r"[Aa]nswer:\s*([A-Da-d])", solution)
-            if m:
-                gold = m.group(1).upper()
-            elif solution.strip().upper() in {"A", "B", "C", "D"}:
-                gold = solution.strip().upper()
-
+            q = self.prepare(q)
+            gold = q.get("gold_letter")
         if not gold:
             return 0.0
-
         pred = _extract_letter(response, {"A", "B", "C", "D"})
         return 1.0 if pred == gold else 0.0
 
@@ -413,7 +416,7 @@ class MMLUProBenchmark(BenchmarkBase):
         ans_raw = q.get("answer")
         if ans_raw is None:
             ans_raw = q.get("answer_index")
-        
+
         if isinstance(ans_raw, int):
             gold = chr(65 + ans_raw)
         else:
@@ -504,18 +507,18 @@ class SciBenchBenchmark(BenchmarkBase):
             gold_val = q.get("answer_latex")
         if gold_val is None:
             gold_val = q.get("solution", "")
-        
+
         if gold_val is None or not str(gold_val).strip():
             return 0.0
-        
+
         gold_str = str(gold_val).strip()
         pred = _extract_boxed(response) or _extract_number(response)
         if pred is None:
             return 0.0
-        
+
         if pred.strip().lower() == gold_str.lower():
             return 1.0
-        
+
         try:
             return 1.0 if abs(float(pred) - float(gold_str)) < 1e-4 else 0.0
         except ValueError:
@@ -543,7 +546,7 @@ class AIMEBenchmark(BenchmarkBase):
         gold_raw = q.get("answer")
         if gold_raw is None:
             gold_raw = q.get("solution", "")
-        
+
         gold_str = str(gold_raw).strip()
         gold_num = _extract_boxed(gold_str) or _extract_number(gold_str)
         if gold_num is None:
@@ -621,49 +624,71 @@ class MATH500Benchmark(BenchmarkBase):
 
 
 # ---------------------------------------------------------------------------
-# Humanity's Last Exam (HLE) — extreme multi-disciplinary benchmark
+# SuperGPQA — scaled graduate-level multiple choice (hard subset)
 # ---------------------------------------------------------------------------
 
 
-class HLEBenchmark(BenchmarkBase):
-    name = "hle"
-    display_name = "Humanity's Last Exam"
+class SuperGPQABenchmark(BenchmarkBase):
+    name = "supergpqa"
+    display_name = "SuperGPQA"
+
+    def prepare(self, raw: dict) -> dict:
+        q = raw
+        # Filter for hard subset only
+        diff = str(q.get("difficulty", "")).strip().lower()
+        if diff != "hard":
+            q["_skip"] = True
+            return q
+
+        options = q.get("options") or q.get("choices")
+        if not options:
+            opts = []
+            for code in range(65, 75):
+                letter = chr(code)
+                val = q.get(f"option_{letter.lower()}") or q.get(f"option_{letter}") or q.get(letter)
+                if val:
+                    opts.append(val)
+            options = opts
+
+        gold_letter = str(q.get("answer_letter") or q.get("answer") or q.get("gold") or "").strip().upper()
+        q["options"] = options or []
+        q["gold_letter"] = gold_letter
+        return q
 
     def format_prompt(self, q: dict) -> str:
-        question = q.get("question", "")
+        if "options" not in q or q.get("options") is None:
+            q = self.prepare(q)
+        question = q.get("question") or q.get("Question", "")
+        options = q.get("options", [])
+        letters = "ABCDEFGHIJ"
+
+        if options and isinstance(options, list):
+            opts_str = "\n".join(f"{letters[i]}. {o}" for i, o in enumerate(options) if i < len(letters))
+            max_letter = letters[min(len(options), len(letters)) - 1]
+            return (
+                "Answer the following graduate-level multiple-choice question.\n\n"
+                f"{question}\n\n{opts_str}\n\n"
+                f"Reply with ONLY the letter (A-{max_letter}) of the correct answer."
+            )
+
         return (
-            "Solve the following question from Humanity's Last Exam step-by-step.\n"
-            "End your response with '\\boxed{<answer>}' containing your final concise answer.\n\n"
-            f"Question: {question}"
+            "Answer the following graduate-level multiple-choice question.\n\n"
+            f"{question}\n\n"
+            "Reply with ONLY the letter of the correct answer."
         )
 
     def evaluate(self, q: dict, response: str) -> float:
-        gold = str(q.get("answer", "")).strip()
+        gold = q.get("gold_letter")
+        if not gold:
+            q = self.prepare(q)
+            gold = q.get("gold_letter")
         if not gold:
             return 0.0
 
-        pred_boxed = _extract_boxed(response)
-        if pred_boxed and pred_boxed.strip().lower() == gold.lower():
-            return 1.0
-
-        if len(gold) == 1 and gold.upper() in {"A", "B", "C", "D", "E", "F", "G", "H", "I", "J"}:
-            pred_letter = _extract_letter(response, set("ABCDEFGHIJ"))
-            if pred_letter == gold.upper():
-                return 1.0
-
-        gold_num = _extract_number(gold)
-        pred_num = _extract_number(pred_boxed) if pred_boxed else _extract_number(response)
-        if gold_num is not None and pred_num is not None:
-            try:
-                if abs(float(gold_num) - float(pred_num)) < 1e-4:
-                    return 1.0
-            except ValueError:
-                pass
-
-        if len(gold) >= 4 and re.search(r"\b" + re.escape(gold) + r"\b", response, flags=re.IGNORECASE):
-            return 1.0
-
-        return 0.0
+        n_opts = len(q.get("options", [])) or 10
+        valid = {chr(65 + i) for i in range(min(n_opts, 10))}
+        pred = _extract_letter(response, valid)
+        return 1.0 if pred == gold else 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -679,24 +704,23 @@ class SciCodeBenchmark(BenchmarkBase):
     def format_prompt(self, q: dict) -> str:
         desc = q.get("problem_description_main") or q.get("prompt", "")
         deps = q.get("required_dependencies", "")
+        deps_str = "\n".join(deps) if isinstance(deps, list) else str(deps)
         return (
             "Write a Python script to solve the following scientific problem.\n"
             "Return ONLY the complete Python code (including imports). "
             "No explanations, no markdown code blocks.\n\n"
-            f"{deps}\n\n"
+            f"{deps_str}\n\n"
             f"{desc}"
         )
 
     def evaluate(self, q: dict, response: str) -> float:
         code = _strip_code_blocks(response)
         deps = q.get("required_dependencies", "")
+        deps_str = "\n".join(deps) if isinstance(deps, list) else str(deps)
         tests = q.get("general_tests", "")
-        if isinstance(tests, list):
-            tests_str = "\n\n".join(tests)
-        else:
-            tests_str = str(tests)
+        tests_str = "\n\n".join(tests) if isinstance(tests, list) else str(tests)
 
-        parts = [p for p in [deps, code, tests_str] if p.strip()]
+        parts = [p for p in [deps_str, code, tests_str] if p.strip()]
         full = "\n\n".join(parts)
         return 1.0 if _execute_code(full, self.settings.code_exec_timeout) else 0.0
 
@@ -708,7 +732,7 @@ class SciCodeBenchmark(BenchmarkBase):
 
 class TauBenchBenchmark(BenchmarkBase):
     name = "tau_bench"
-    display_name = "Tau-Bench (Banking)"
+    display_name = "Tau-Bench (Retail)"
 
     def format_prompt(self, q: dict) -> str:
         convs = q.get("conversations", [])
@@ -746,11 +770,46 @@ class TauBenchBenchmark(BenchmarkBase):
             return 1.0 if gold_text.strip().lower() in response.strip().lower() else 0.0
 
         gold_func = gold_tool_calls[0].get("function", {})
-        gold_name = str(gold_func.get("name", ""))
+        gold_name = str(gold_func.get("name", "")).strip()
+        gold_args_raw = gold_func.get("arguments", {})
+        if isinstance(gold_args_raw, str):
+            try:
+                gold_args = json.loads(gold_args_raw)
+            except Exception:
+                gold_args = {}
+        elif isinstance(gold_args_raw, dict):
+            gold_args = gold_args_raw
+        else:
+            gold_args = {}
 
-        if gold_name and re.search(r"\b" + re.escape(gold_name) + r"\b", response, flags=re.IGNORECASE):
-            return 1.0
+        pred_json = None
+        json_match = re.search(r"\{.*\}", response, re.DOTALL)
+        if json_match:
+            try:
+                pred_json = json.loads(json_match.group(0))
+            except Exception:
+                pred_json = None
 
+        if isinstance(pred_json, dict):
+            pred_name = str(pred_json.get("name") or pred_json.get("function", "")).strip()
+            pred_args = pred_json.get("arguments", {})
+            if isinstance(pred_args, str):
+                try:
+                    pred_args = json.loads(pred_args)
+                except Exception:
+                    pred_args = {}
+
+            if pred_name.lower() == gold_name.lower():
+                if not gold_args:
+                    return 1.0
+                g_norm = {str(k).lower(): str(v).strip().lower() for k, v in gold_args.items()}
+                p_norm = (
+                    {str(k).lower(): str(v).strip().lower() for k, v in pred_args.items()}
+                    if isinstance(pred_args, dict)
+                    else {}
+                )
+                if g_norm == p_norm:
+                    return 1.0
         return 0.0
 
 
@@ -773,7 +832,7 @@ BENCHMARK_CLASSES: dict[str, type[BenchmarkBase]] = {
     "math_500": MATH500Benchmark,
     "mmlu_pro": MMLUProBenchmark,
     "ifeval": IFEvalBenchmark,
-    "hle": HLEBenchmark,
+    "supergpqa": SuperGPQABenchmark,
     "scicode": SciCodeBenchmark,
     "tau_bench": TauBenchBenchmark,
 }
@@ -784,4 +843,3 @@ def create_benchmark(name: str, config: BenchmarkConfig, settings: Settings) -> 
     if cls is None:
         raise ValueError(f"Unknown benchmark: {name}")
     return cls(config, settings)
-

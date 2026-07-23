@@ -7,14 +7,11 @@ import unittest
 from lite_bench.benchmarks import (
     AIMEBenchmark,
     GPQABenchmark,
-    HLEBenchmark,
     MATH500Benchmark,
-    MMLUProBenchmark,
     SciBenchBenchmark,
-    TauBenchBenchmark,
+    SuperGPQABenchmark,
     _extract_boxed,
     _extract_letter,
-    _extract_number,
     _strip_code_blocks,
 )
 from lite_bench.config import BenchmarkConfig, Settings
@@ -23,10 +20,7 @@ from lite_bench.ifeval_verifiers import (
     verify_json_format,
     verify_keyword_frequency,
     verify_keywords_existence,
-    verify_number_bullet_lists,
-    verify_number_highlighted_sections,
     verify_number_paragraphs,
-    verify_number_sentences,
     verify_number_words,
 )
 
@@ -93,15 +87,11 @@ class EvaluationPrecisionTests(unittest.TestCase):
         # Wrong fraction with same denominator must NOT evaluate to 1.0
         self.assertEqual(bench.evaluate(q, "\\boxed{\\frac{4}{5}}"), 0.0)
 
-    def test_hle_short_string_precision(self) -> None:
-        bench = HLEBenchmark(self.config, self.settings)
-        q = {"question": "Is it true?", "answer": "no"}
-        
-        # Response with boxed answer
-        self.assertEqual(bench.evaluate(q, "\\boxed{no}"), 1.0)
-        
-        # Unrelated text containing the word "no" should NOT blindly pass unless boxed/exact
-        self.assertEqual(bench.evaluate(q, "There is no doubt that the answer is yes."), 0.0)
+    def test_supergpqa_precision(self) -> None:
+        bench = SuperGPQABenchmark(self.config, self.settings)
+        q = {"difficulty": "hard", "options": ["A_val", "B_val", "C_val"], "answer_letter": "B"}
+        self.assertEqual(bench.evaluate(q, "The correct choice is B."), 1.0)
+        self.assertEqual(bench.evaluate(q, "Choice A is right."), 0.0)
 
     def test_ifeval_relation_verifiers(self) -> None:
         # "at most" relation

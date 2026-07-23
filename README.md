@@ -3,9 +3,9 @@
 > **Small, repeatable samples of established benchmarks with programmatic scoring.
 > No LLM-as-judge. Sampling and scoring are deterministic; model outputs may vary.**
 
-This repo benchmarks LLMs on ~50 questions sampled from each of 8 established
-benchmarks, grouped into 5 categories. Results, rankings, and charts below are
-**auto-generated** by `py run_benchmark.py` after every run.
+This repo benchmarks LLMs on ~50 questions sampled from 12 established benchmarks
+grouped into 5 core categories. Results, rankings, and charts below are
+**auto-generated** after every run.
 
 ## 📝 Benchmarks
 
@@ -20,139 +20,27 @@ benchmarks, grouped into 5 categories. Results, rankings, and charts below are
 | **MATH-500** | Math | 500 | 50 | Exact match / \boxed{} extraction | `HuggingFaceH4/MATH-500` |
 | **MMLU-Pro** | Knowledge | 12,032 | 50 | Multiple choice (10 options) | `TIGER-Lab/MMLU-Pro` |
 | **IFEval** | Instruction | 541 | 50 | 25 programmatic verifiers (strict) | `google/IFEval` |
-
-### Benchmark Details
-
-<details>
-<summary><b>BigCodeBench-Hard</b> — The hardest 148 practical Python programming tasks from BigCodeBench requiring d…</summary>
-
-The hardest 148 practical Python programming tasks from BigCodeBench requiring deep integration of complex real-world libraries (pandas, numpy, scipy, etc.).
-
-- **Paper:** Zhuo et al. 2024
-- **Dataset:** `bigcode/bigcodebench-hard (v0.1.4)`
-- **Verification:** Python unittest execution (explicit opt-in required)
-- **Full dataset size:** 148 questions
-- **Sampled:** 50 questions (seed=42)
-
-</details>
-
-<details>
-<summary><b>HumanEval+</b> — 164 hand-written Python functions with docstrings and rigorously expanded test c…</summary>
-
-164 hand-written Python functions with docstrings and rigorously expanded test cases to catch edge-case bugs and hallucinated solutions.
-
-- **Paper:** Chen et al. 2021, augmented by Liu et al. 2023 (EvalPlus)
-- **Dataset:** `evalplus/humanevalplus`
-- **Verification:** Python test execution (explicit opt-in required)
-- **Full dataset size:** 164 questions
-- **Sampled:** 50 questions (seed=42)
-
-</details>
-
-<details>
-<summary><b>MBPP+</b> — 378 crowd-sourced Python programming problems with heavily augmented test suites…</summary>
-
-378 crowd-sourced Python programming problems with heavily augmented test suites from EvalPlus for deep coverage.
-
-- **Paper:** Austin et al. 2021, augmented by Liu et al. 2023 (EvalPlus)
-- **Dataset:** `evalplus/mbppplus`
-- **Verification:** Python test execution (explicit opt-in required)
-- **Full dataset size:** 378 questions
-- **Sampled:** 50 questions (seed=42)
-
-</details>
-
-<details>
-<summary><b>GPQA Diamond</b> — 198 graduate-level questions in physics, chemistry, and biology written by domai…</summary>
-
-198 graduate-level questions in physics, chemistry, and biology written by domain experts. Google-proof questions where non-experts score only 34% with internet.
-
-- **Paper:** Rein et al. 2023
-- **Dataset:** `nichenshun/gpqa_diamond (community mirror of Idavidrein/gpqa)`
-- **Verification:** Multiple choice (4 options)
-- **Full dataset size:** 198 questions
-- **Sampled:** 50 questions (seed=42)
-
-</details>
-
-<details>
-<summary><b>SciBench</b> — College-level scientific textbook problem solving in physics, chemistry, and the…</summary>
-
-College-level scientific textbook problem solving in physics, chemistry, and thermodynamics requiring multi-step quantitative calculations.
-
-- **Paper:** Wang et al. 2023
-- **Dataset:** `xw27/scibench`
-- **Verification:** Numerical / Formula exact match
-- **Full dataset size:** 692 questions
-- **Sampled:** 50 questions (seed=42)
-
-</details>
-
-<details>
-<summary><b>AIME 2024/2025</b> — American Invitational Mathematics Examination (AIME) high-school competition mat…</summary>
-
-American Invitational Mathematics Examination (AIME) high-school competition math problems. Premier benchmark for evaluating advanced mathematical reasoning in SOTA AI models.
-
-- **Paper:** MAA AIME Competition Problems
-- **Dataset:** `AI-MO/aimo-validation-aime`
-- **Verification:** Integer exact match (000-999)
-- **Full dataset size:** 90 questions
-- **Sampled:** 50 questions (seed=42)
-
-</details>
-
-<details>
-<summary><b>MATH-500</b> — 500 challenging competition math problems (Levels 1 to 5) across algebra, geomet…</summary>
-
-500 challenging competition math problems (Levels 1 to 5) across algebra, geometry, number theory, calculus, and probability.
-
-- **Paper:** Hendrycks et al. 2021 / Lightman et al. 2023
-- **Dataset:** `HuggingFaceH4/MATH-500`
-- **Verification:** Exact match / \boxed{} extraction
-- **Full dataset size:** 500 questions
-- **Sampled:** 50 questions (seed=42)
-
-</details>
-
-<details>
-<summary><b>MMLU-Pro</b> — A harder successor to MMLU with 10 answer choices instead of 4, covering 14 acad…</summary>
-
-A harder successor to MMLU with 10 answer choices instead of 4, covering 14 academic disciplines (biology, business, chemistry, computer science, economics, engineering, health, history, law, math, philosophy, physics, psychology, other).
-
-- **Paper:** Wang et al. 2024
-- **Dataset:** `TIGER-Lab/MMLU-Pro`
-- **Verification:** Multiple choice (10 options)
-- **Full dataset size:** 12,032 questions
-- **Sampled:** 50 questions (seed=42)
-
-</details>
-
-<details>
-<summary><b>IFEval</b> — Tests whether models follow specific formatting and content instructions (word c…</summary>
-
-Tests whether models follow specific formatting and content instructions (word counts, paragraph structure, keyword inclusion/exclusion, JSON output, language constraints, etc.). Each prompt has one or more verifiable constraints checked by 25 deterministic programmatic verifiers.
-
-- **Paper:** Zhou et al. 2023
-- **Dataset:** `google/IFEval`
-- **Verification:** 25 programmatic verifiers (strict)
-- **Full dataset size:** 541 questions
-- **Sampled:** 50 questions (seed=42)
-
-</details>
+| **SciCode** | Coding | 65 | 50 | Python code execution & unit test assertions | `SciCode1/SciCode` |
+| **SuperGPQA** | Knowledge | 26,529 (7,050 hard) | 50 | Multiple choice (up to 10 options) | `m-a-p/SuperGPQA` |
+| **Tau-Bench (Retail)** | Instruction | 82 | 50 | Agentic tool-call function & argument matching | `amityco/tau-bench-retail-train-next-action` |
 
 ## 🏅 Leaderboard
 
 | Rank | Model | Overall | 💻 Coding | 🔬 Science | 📐 Math | 📚 Knowledge | 📋 Instruction |
 |:----:|-------|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|
 | 🥇 | **deepseek/deepseek-v4-flash** 🧠 | **59.8%** | 40.0% | 39.0% | 56.0% | 80.0% | 84.0% |
+| 🥈 | **gemini/gemini-3.1-flash-lite** 🧠 | **52.0%** | 29.5% | 51.0% | 78.0% | 60.0% | 41.3% |
 
 *🧠 indicates reasoning models that utilize thinking tokens or have explicit thinking effort configured.*
 
 ### Per-Benchmark Scores
 
-| Model | BigCodeBench-Hard | HumanEval+ | MBPP+ | GPQA Diamond | SciBench | AIME 2024/2025 | MATH-500 | MMLU-Pro | IFEval |
-|-------|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|
-| deepseek/deepseek-v4-flash | 20% (10/50) | 90% (45/50) | 10% (5/50) | 58% (29/50) | 20% (10/50) | 24% (12/50) | 88% (44/50) | 80% (40/50) | 84% (42/50) |
+| Model | BigCodeBench-Hard | HumanEval+ | MBPP+ | GPQA Diamond | SciBench | AIME 2024/2025 | MATH-500 | MMLU-Pro | IFEval | SciCode | SuperGPQA | Tau-Bench (Retail) |
+|-------|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|
+| deepseek/deepseek-v4-flash | 20% (10/50) ±10.9pp | 90% (45/50) ±8.5pp | 10% (5/50) ±8.5pp | 58% (29/50) ±13.2pp | 20% (10/50) ±10.9pp | 24% (12/50) ±11.6pp | 88% (44/50) ±9.1pp | 80% (40/50) ±10.9pp | 84% (42/50) ±10.1pp | N/A | N/A | N/A |
+| gemini/gemini-3.1-flash-lite | 20% (10/50) ±10.9pp | 90% (45/50) ±8.5pp | 8% (4/50) ±7.8pp | 62% (31/50) ±13.0pp | 40% (20/50) ±13.1pp | 58% (29/50) ±13.2pp | 98% (49/50) ±5.1pp | 60% (30/50) ±13.1pp | 83% (38/46) ±10.8pp | 0% (0/50) ±3.6pp | N/A | 0% (0/3) ±28.1pp |
+
+*±pp indicates 95% Wilson score confidence interval half-width.*
 
 ## 📊 Charts
 
@@ -194,49 +82,51 @@ Tests whether models follow specific formatting and content instructions (word c
 
 ## 🪙 Token Usage & Performance
 
-| Model | Input | Output | Thinking | Total | Out % | Think % | Avg TPS | Avg Time |
-|-------|------:|-------:|---------:|------:|------:|--------:|--------:|---------:|
-| deepseek/deepseek-v4-flash | 66,677 | 55,762 | 680,781 | 803,220 | 7% | 85% | 94.4 | 16.8s |
+| Model | Input | Output | Thinking | Total | Out % | Think % | Avg TPS | Avg Time | Est. Cost |
+|-------|------:|-------:|---------:|------:|------:|--------:|--------:|---------:|----------:|
+| deepseek/deepseek-v4-flash | 66,677 | 55,762 | 680,781 | 803,220 | 7% | 85% | 94.4 | 16.8s | — |
+| gemini/gemini-3.1-flash-lite | 87,458 | 186,297 | 0 | 273,755 | 68% | — | 64.2 | 5.6s | — |
 
-*TPS = output tokens/second (cloud APIs only, skipped for local models). Thinking tokens are reasoning/chain-of-thought tokens (e.g. DeepSeek R1).*
+*TPS = output tokens/second (cloud APIs only, skipped for local models). Est. Cost calculated via LiteLLM cost tables.*
 
 ## 🔬 Methodology
 
-### Sampling
+### Sampling & Statistical Significance
 - **~50 questions** are sampled from each benchmark's full dataset
-- Sampling uses a **fixed seed (42)** so the same questions are used across runs and models
-- Pin a dataset `revision` in `config.yaml` to make samples reproducible across dataset updates
-- Temperature zero reduces variance, but provider-side inference is not guaranteed deterministic
+- Sampling uses a **fixed seed (42)** via random sampling so exact questions are stable across runs
+- Samples of n=50 have 95% confidence intervals of roughly ±7–14pp; treat small ranking gaps as noise
+- **Scoring v2 Notice**: Sampling and scoring strictness updated in v0.2.0; results are not directly comparable with pre-v0.2.0 runs
 
 ### Scoring
 - **All scoring is programmatic** — no LLM-as-judge is used anywhere
-- Code benchmarks are skipped unless `--unsafe` is passed in an isolated sandbox
+- Code benchmarks are skipped unless unsafe code execution is enabled in an isolated sandbox
 - Multiple-choice benchmarks extract the answer letter and compare to ground truth
-- GSM8K extracts the final number (after `####`) and compares numerically
+- Math benchmarks extract boxed/numerical answers and evaluate symbolically or numerically
 - IFEval uses its 25 strict programmatic verifiers (word count, format, keywords, etc.)
+- Tau-Bench verifies tool function name AND argument dictionary match
 
 ### Category & Overall Scores
 - **Category score** = average of its benchmark scores
-  - 💻 **Coding** = avg(BigCodeBench-Hard, HumanEval+, MBPP+)
+  - 💻 **Coding** = avg(BigCodeBench-Hard, HumanEval+, MBPP+, SciCode)
   - 🔬 **Science** = avg(GPQA Diamond, SciBench)
   - 📐 **Math** = avg(AIME 2024/2025, MATH-500)
-  - 📚 **Knowledge** = avg(MMLU-Pro)
-  - 📋 **Instruction** = avg(IFEval)
+  - 📚 **Knowledge** = avg(MMLU-Pro, SuperGPQA)
+  - 📋 **Instruction** = avg(IFEval, Tau-Bench (Retail))
 - **Overall score** = average of completed category scores (equal weight per category)
-- A failed request is excluded and recorded separately; it is never silently scored as incorrect
+- Provider failures are excluded and recorded separately; scorer exceptions score 0.0 without retrying provider
 
 ### Inference Settings
 - `temperature`: 0.0
 - `max_tokens`: 4096
 - `timeout`: 300s per request
-- `retries`: up to 3 provider retries
+- `retries`: up to 3 retries with exponential backoff and jitter
 
 ## 🚀 How to Run
 
 ### Prerequisites
 
 ```bash
-pip install -r requirements.txt
+pip install -e .[dev]
 ```
 
 ### API Keys
@@ -252,78 +142,59 @@ Set environment variables for the providers you want to test.
 | LM Studio (local) | *(none needed)* | [lmstudio.ai](https://lmstudio.ai) |
 | HuggingFace | `HF_TOKEN` | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) |
 
-> **Note:** All datasets are public. `HF_TOKEN` is optional but speeds up
-> downloads and avoids rate limits on HuggingFace.
-
-### Commands
+### Running Benchmarks via Web Dashboard
 
 ```bash
-# Run all benchmarks on all configured models
-py run_benchmark.py
+# Launch the local web dashboard (serves on http://127.0.0.1:8000)
+py web_app.py
 
-# Run code benchmarks only in an isolated sandbox; this executes model-generated Python
-py run_benchmark.py --unsafe --benchmarks humaneval mbpp bigcodebench
-
-# Run specific benchmarks only
-py run_benchmark.py --benchmarks humaneval mbpp gsm8k
-
-# Run specific models only (by id or display name)
-py run_benchmark.py --models deepseek/deepseek-chat gemini/gemini-2.5-flash
-
-# List configured models and benchmarks
-py run_benchmark.py --list
-
-# Regenerate README + charts from latest results (no API calls)
-py run_benchmark.py --generate-only
+# Launch without automatically opening browser
+py web_app.py --no-browser
 ```
 
-After each run, this README is **automatically regenerated** with updated
-rankings, tables, charts, and token stats. Commit the changes to update
-your GitHub leaderboard.
+1. Open the dashboard in your browser.
+2. Select models, benchmarks, and settings.
+3. Click **Run Benchmarks**.
+4. Click **Generate Reports** to update `README.md` and `charts/`.
 
 ## ➕ Adding Models
 
-Edit `config.yaml` and add any [litellm-supported model](https://docs.litellm.ai/docs/providers):
+Edit `config.yaml` or add models directly in the Web UI:
 
 ```yaml
 models:
   - id: anthropic/claude-sonnet-4-20250514
     name: Claude Sonnet 4
+    max_tokens: 16384
   - id: openai/gpt-4o
     name: GPT-4o
   - id: lm_studio/qwen2.5-coder-7b-instruct
     name: Qwen 2.5 Coder 7B (local)
 ```
 
-The `id` is a litellm model identifier (`provider/model-name`).
-The `name` is the display name shown in the leaderboard.
-
 ## 📁 Project Structure
 
 ```
 ├── config.yaml              # Models, benchmarks, categories, settings
-├── run_benchmark.py         # CLI entry point
-├── requirements.txt         # Python dependencies
+├── web_app.py               # Web dashboard server
 ├── README.md                # ← this file (auto-generated)
+├── web/                     # Web dashboard frontend (HTML/CSS/JS)
 ├── lite_bench/
+│   ├── engine.py            # Unified execution engine & thread concurrency
+│   ├── results_store.py     # Results persistence, schema v2, atomic writes
+│   ├── metadata.py          # Benchmark display metadata & category mapping
 │   ├── config.py            # Config loading & validation
-│   ├── providers.py         # litellm wrapper (100+ providers)
-│   ├── datasets.py          # HuggingFace dataset sampling
-│   ├── benchmarks.py        # 8 benchmark implementations
+│   ├── providers.py         # litellm wrapper & telemetry
+│   ├── datasets.py          # Deterministic HuggingFace sampling
+│   ├── benchmarks.py        # Benchmark implementations & verifiers
 │   ├── ifeval_verifiers.py  # 25 strict IFEval verifiers
 │   ├── charts.py            # matplotlib chart generation
-│   └── readme_gen.py        # This README generator
+│   └── readme_gen.py        # README generator
 ├── results/                 # JSON results per run
-│   ├── latest.json          # Most recent run
-│   └── results_YYYYMMDD_HHMMSS.json
-├── charts/                  # Generated PNG charts
-    ├── leaderboard.png
-    ├── categories.png
-    ├── radar.png
-    └── heatmap.png
-└── tests/                   # Regression tests
+│   └── latest.json          # Leaderboard results (schema v2)
+└── charts/                  # Generated PNG charts
 ```
 
 ---
 
-*Auto-generated by [lite-benchmarks](.) on 2026-07-23 16:27 UTC. Run `py run_benchmark.py` to update.*
+*Auto-generated by [lite-benchmarks](.) on 2026-07-23 17:22 UTC. Use the Web Dashboard to update.*

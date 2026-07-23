@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lite-benchmarks"
-version = "0.1.0"
-description = "A reproducible, small-sample LLM benchmark runner"
+version = "0.2.0"
+description = "A reproducible, small-sample LLM benchmark studio and leaderboard generator"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
