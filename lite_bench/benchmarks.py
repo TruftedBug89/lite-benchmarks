@@ -1,7 +1,7 @@
 """Benchmark implementations using real datasets with built-in verification.
 
-7 benchmarks across 5 categories:
-  Coding:      HumanEval (unit-test execution), MBPP (assert execution)
+8 benchmarks across 5 categories:
+  Coding:      HumanEval+ (EvalPlus), MBPP+ (EvalPlus), BigCodeBench (unittest)
   Science:     GPQA Diamond (grad-level MC), ARC-Challenge (science MC)
   Math:        GSM8K (numerical exact match)
   Knowledge:   MMLU-Pro (10-choice MC)
@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import os
-import random
 import re
 import subprocess
 import sys
@@ -160,39 +159,58 @@ class MBPPBenchmark(BenchmarkBase):
 
 
 # ---------------------------------------------------------------------------
-# GPQA Diamond — graduate-level science multiple choice
+# BigCodeBench — practical Python with real libraries, unittest verification
+# ---------------------------------------------------------------------------
+
+class BigCodeBenchBenchmark(BenchmarkBase):
+    name = "bigcodebench"
+    display_name = "BigCodeBench"
+
+    def format_prompt(self, q: dict) -> str:
+        entry = q.get("entry_point", "task_func")
+        prompt = q.get("instruct_prompt") or q.get("complete_prompt", "")
+        return (
+            f"Write a Python function named `{entry}` to solve the following task. "
+            "Return ONLY the code (including any needed imports). "
+            "No explanations, no markdown code blocks.\n\n"
+            f"{prompt}"
+        )
+
+    def evaluate(self, q: dict, response: str) -> float:
+        code = _strip_code_blocks(response)
+        test = q.get("test", "")
+        runner = (
+            "\n\nimport sys, unittest\n"
+            "suite = unittest.TestLoader().loadTestsFromTestCase(TestCases)\n"
+            "result = unittest.TextTestRunner(verbosity=0).run(suite)\n"
+            "sys.exit(0 if result.wasSuccessful() else 1)\n"
+        )
+        full = code + "\n\n" + test + runner
+        return 1.0 if _execute_code(full, self.settings.code_exec_timeout) else 0.0
+
+
+# ---------------------------------------------------------------------------
+# GPQA Diamond — graduate-level science multiple choice (community mirror)
 # ---------------------------------------------------------------------------
 
 class GPQABenchmark(BenchmarkBase):
     name = "gpqa"
     display_name = "GPQA Diamond"
 
-    def _choices(self, q: dict) -> tuple[list[str], str]:
-        question = q.get("Question") or q.get("question", "")
-        correct = q.get("Correct Answer") or q.get("correct_answer", "")
-        incorrect = [
-            q.get("Incorrect Answer 1") or q.get("incorrect_answer_1", ""),
-            q.get("Incorrect Answer 2") or q.get("incorrect_answer_2", ""),
-            q.get("Incorrect Answer 3") or q.get("incorrect_answer_3", ""),
-        ]
-        choices = [correct] + [c for c in incorrect if c]
-        rng = random.Random(hash(question) % 2**32)
-        rng.shuffle(choices)
-        correct_letter = "ABCD"[choices.index(correct)]
-        return choices, correct_letter
-
     def format_prompt(self, q: dict) -> str:
-        question = q.get("Question") or q.get("question", "")
-        choices, _ = self._choices(q)
-        options = "\n".join(f"{chr(65+i)}. {c}" for i, c in enumerate(choices))
+        question = q.get("question", "")
         return (
-            f"Answer the following graduate-level science question.\n\n"
-            f"Question: {question}\n{options}\n\n"
+            "Answer the following graduate-level science question.\n\n"
+            f"{question}\n\n"
             "Reply with ONLY the letter (A, B, C, or D) of the correct answer."
         )
 
     def evaluate(self, q: dict, response: str) -> float:
-        _, gold = self._choices(q)
+        solution = q.get("solution", "")
+        m = re.search(r"[Aa]nswer:\s*([A-Da-d])", solution)
+        if not m:
+            return 0.0
+        gold = m.group(1).upper()
         pred = _extract_letter(response, {"A", "B", "C", "D"})
         return 1.0 if pred == gold else 0.0
 
@@ -307,6 +325,7 @@ class IFEvalBenchmark(BenchmarkBase):
 BENCHMARK_CLASSES: dict[str, type[BenchmarkBase]] = {
     "humaneval": HumanEvalBenchmark,
     "mbpp": MBPPBenchmark,
+    "bigcodebench": BigCodeBenchBenchmark,
     "gpqa": GPQABenchmark,
     "arc": ARCBenchmark,
     "gsm8k": GSM8KBenchmark,

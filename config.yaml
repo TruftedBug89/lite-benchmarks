@@ -27,7 +27,7 @@ models:
 # Overall score  = average of all category scores.
 categories:
   coding:
-    benchmarks: [humaneval, mbpp]
+    benchmarks: [humaneval, mbpp, bigcodebench]
   science:
     benchmarks: [gpqa, arc]
   math:
@@ -48,10 +48,14 @@ benchmarks:
     dataset: evalplus/mbppplus
     split: test
     num_samples: 50
+  bigcodebench:
+    enabled: true
+    dataset: bigcode/bigcodebench
+    split: v0.1.4
+    num_samples: 50
   gpqa:
     enabled: true
-    dataset: Idavidrein/gpqa
-    subset: gpqa_diamond
+    dataset: nichenshun/gpqa_diamond
     split: train
     num_samples: 50
   arc:

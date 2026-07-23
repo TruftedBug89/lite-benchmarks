@@ -59,12 +59,27 @@ BENCHMARK_INFO: dict[str, dict] = {
             "3 tests per problem with mutation-based fuzzing for deeper coverage."
         ),
     },
+    "bigcodebench": {
+        "display": "BigCodeBench",
+        "category": "Coding",
+        "total": "1,140",
+        "verification": "Code execution (unittest)",
+        "source": "bigcode/bigcodebench (v0.1.4)",
+        "paper": "Zhuo et al. 2024",
+        "description": (
+            "Practical Python programming tasks requiring use of real-world libraries "
+            "(collections, itertools, json, re, os, and more). Unlike HumanEval/MBPP "
+            "which test algorithmic function completion, BigCodeBench tests whether "
+            "models can write code that integrates multiple library calls to solve "
+            "realistic tasks. Verified with unittest-based test suites."
+        ),
+    },
     "gpqa": {
         "display": "GPQA Diamond",
         "category": "Science",
         "total": "198",
         "verification": "Multiple choice (4 options)",
-        "source": "Idavidrein/gpqa (gpqa_diamond)",
+        "source": "nichenshun/gpqa_diamond (community mirror of Idavidrein/gpqa)",
         "paper": "Rein et al. 2023",
         "description": (
             "198 graduate-level questions in physics, chemistry, and biology written "
