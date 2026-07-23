@@ -161,6 +161,10 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     overall: dict[str, float] = {}
     total_in_tokens: dict[str, int] = {}
     total_out_tokens: dict[str, int] = {}
+    total_think_tokens: dict[str, int] = {}
+    total_all_tokens: dict[str, int] = {}
+    avg_tps: dict[str, float | None] = {}
+    avg_time: dict[str, float | None] = {}
 
     for mname in model_names:
         mdata = results[mname]
@@ -179,6 +183,25 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
         total_out_tokens[mname] = sum(
             mdata.get(b, {}).get("output_tokens", 0) for b in bench_names
         )
+        total_think_tokens[mname] = sum(
+            mdata.get(b, {}).get("thinking_tokens", 0) for b in bench_names
+        )
+        total_all_tokens[mname] = sum(
+            mdata.get(b, {}).get("total_tokens", 0) for b in bench_names
+        )
+        # Timing (only for cloud models)
+        tps_vals = [
+            mdata.get(b, {}).get("avg_tokens_per_second")
+            for b in bench_names
+            if mdata.get(b, {}).get("avg_tokens_per_second") is not None
+        ]
+        avg_tps[mname] = sum(tps_vals) / len(tps_vals) if tps_vals else None
+        time_vals = [
+            mdata.get(b, {}).get("avg_time_ms")
+            for b in bench_names
+            if mdata.get(b, {}).get("avg_time_ms") is not None
+        ]
+        avg_time[mname] = sum(time_vals) / len(time_vals) if time_vals else None
 
     ranked = sorted(model_names, key=lambda m: overall[m], reverse=True)
 
@@ -191,7 +214,7 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     _a("> **Lite subsets of professionally-made benchmarks, each scored with its")
     _a("> own built-in verification system. No LLM-as-judge. Fully deterministic.**")
     _a("")
-    _a("This repo benchmarks LLMs on ~50 questions sampled from each of 7 established")
+    _a("This repo benchmarks LLMs on ~50 questions sampled from each of 8 established")
     _a("benchmarks, grouped into 5 categories. Results, rankings, and charts below are")
     _a("**auto-generated** by `py run_benchmark.py` after every run.")
     _a("")
@@ -288,6 +311,7 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
         "categories.png": ("Category Breakdown", "Grouped bar chart comparing each model across the 5 categories."),
         "radar.png": ("Category Radar", "Spider chart showing each model's profile across categories. Larger area = stronger overall."),
         "heatmap.png": ("Benchmark Heatmap", "Per-benchmark scores for every model. Green = high, red = low."),
+        "tokens.png": ("Token Breakdown", "Stacked bar chart of input, thinking, and output tokens per model."),
     }
     for cp in chart_paths:
         fname = cp.split("/")[-1]
@@ -300,18 +324,28 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
         _a(f"![{title}]({cp})")
         _a("")
 
-    # ── Token usage ─────────────────────────────────────────────────
-    _a("## 🪙 Token Usage")
+    # ── Token usage & performance ───────────────────────────────────
+    _a("## 🪙 Token Usage & Performance")
     _a("")
     if ranked:
-        _a("| Model | Input Tokens | Output Tokens | Total |")
-        _a("|-------|:-----------:|:------------:|:-----:|")
+        _a("| Model | Input | Output | Thinking | Total | Out % | Think % | Avg TPS | Avg Time |")
+        _a("|-------|------:|-------:|---------:|------:|------:|--------:|--------:|---------:|")
         for mname in ranked:
             tin = total_in_tokens.get(mname, 0)
             tout = total_out_tokens.get(mname, 0)
-            _a(f"| {mname} | {tin:,} | {tout:,} | {tin + tout:,} |")
+            tthink = total_think_tokens.get(mname, 0)
+            ttot = total_all_tokens.get(mname, 0)
+            out_pct = f"{tout/ttot:.0%}" if ttot else "—"
+            think_pct = f"{tthink/ttot:.0%}" if ttot and tthink else "—"
+            tps = avg_tps.get(mname)
+            tps_str = f"{tps:.1f}" if tps is not None else "—"
+            time_ms = avg_time.get(mname)
+            time_str = f"{time_ms/1000:.1f}s" if time_ms is not None else "—"
+            _a(f"| {mname} | {tin:,} | {tout:,} | {tthink:,} | {ttot:,} "
+               f"| {out_pct} | {think_pct} | {tps_str} | {time_str} |")
         _a("")
-        _a("*Token counts are approximate and depend on the provider's tokenizer.*")
+        _a("*TPS = output tokens/second (cloud APIs only, skipped for local models). "
+           "Thinking tokens are reasoning/chain-of-thought tokens (e.g. DeepSeek R1).*")
         _a("")
 
     # ── Methodology ─────────────────────────────────────────────────

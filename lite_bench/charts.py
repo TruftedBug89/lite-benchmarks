@@ -65,6 +65,17 @@ def generate_all(results: dict, config: Config, charts_dir: str) -> list[str]:
     paths.append(_radar(ranked, cat_scores, cat_names, out))
     paths.append(_heatmap(ranked, bench_scores, bench_names, config, out))
 
+    # Token breakdown
+    token_data: dict[str, dict[str, int]] = {}
+    for mname in ranked:
+        mdata = results[mname]
+        token_data[mname] = {
+            "input": sum(mdata.get(b, {}).get("input_tokens", 0) for b in bench_names),
+            "thinking": sum(mdata.get(b, {}).get("thinking_tokens", 0) for b in bench_names),
+            "output": sum(mdata.get(b, {}).get("output_tokens", 0) for b in bench_names),
+        }
+    paths.append(_token_breakdown(ranked, token_data, out))
+
     return paths
 
 
@@ -159,6 +170,32 @@ def _heatmap(ranked, bench_scores, bench_names, config, out: Path) -> str:
     ax.set_title("Benchmark Heatmap", fontweight="bold")
     fig.tight_layout()
     path = out / "heatmap.png"
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    return f"charts/{path.name}"
+
+
+def _token_breakdown(ranked, token_data, out: Path) -> str:
+    fig, ax = plt.subplots(figsize=(10, max(3, len(ranked) * 0.6)))
+    y = np.arange(len(ranked))
+    inp = [token_data[m]["input"] for m in ranked]
+    think = [token_data[m]["thinking"] for m in ranked]
+    outp = [token_data[m]["output"] for m in ranked]
+
+    ax.barh(y, inp, label="Input", color="#4C72B0")
+    ax.barh(y, think, left=inp, label="Thinking", color="#DD8452")
+    left2 = [i + t for i, t in zip(inp, think)]
+    ax.barh(y, outp, left=left2, label="Output", color="#55A868")
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(ranked)
+    ax.invert_yaxis()
+    ax.set_xlabel("Tokens")
+    ax.set_title("Token Breakdown (Input / Thinking / Output)", fontweight="bold")
+    ax.legend(loc="lower right", fontsize=8)
+    _style(ax)
+    fig.tight_layout()
+    path = out / "tokens.png"
     fig.savefig(path, dpi=150)
     plt.close(fig)
     return f"charts/{path.name}"
