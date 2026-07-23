@@ -35,6 +35,43 @@ from lite_bench.readme_gen import write_readme
 console = Console()
 
 
+def _is_fatal_error(error: Exception) -> bool:
+    err_type = type(error).__name__
+    err_msg = str(error).lower()
+
+    fatal_types = (
+        "NotFoundError",
+        "AuthenticationError",
+        "PermissionDeniedError",
+        "InvalidRequestError",
+        "BadRequestError",
+        "UnprocessableEntityError",
+    )
+    fatal_keywords = (
+        "not found",
+        "404",
+        "invalid api key",
+        "unauthorized",
+        "401",
+        "permission denied",
+        "forbidden",
+        "403",
+        "is not supported",
+        "unknown model",
+        "does not exist",
+        "invalid_model",
+        "api_key_invalid",
+        "no api key provided",
+    )
+
+    if any(ft in err_type for ft in fatal_types):
+        return True
+    if any(fk in err_msg for fk in fatal_keywords):
+        return True
+
+    return False
+
+
 def _aggregate(details: list[dict]) -> dict:
     """Roll up per-question details into benchmark-level stats."""
     n = len(details)
@@ -112,7 +149,11 @@ def run_benchmarks(
         if model.thinking_effort:
             results[model.name]["thinking_effort"] = model.thinking_effort
 
+        skip_model = False
+
         for bname, bconf in benchmarks.items():
+            if skip_model:
+                break
             bench = create_benchmark(bname, bconf, config.settings)
             if bench.requires_code_execution and not config.settings.allow_unsafe_code_execution:
                 console.print(
@@ -131,24 +172,49 @@ def run_benchmarks(
             scored = 0
             failed = 0
             question_details: list[dict] = []
+            fatal_error_encountered = False
 
             def process_question(qi: int, q: dict):
                 prompt = bench.format_prompt(q)
-                try:
-                    result = generate(model, prompt, config.settings)
-                    score = bench.evaluate(q, result.text)
-                    return qi, True, result, score, None
-                except Exception as error:
-                    if "RateLimitError" in type(error).__name__:
-                        time.sleep(60)
-                        try:
-                            result = generate(model, prompt, config.settings)
-                            score = bench.evaluate(q, result.text)
-                            return qi, True, result, score, None
-                        except Exception as retry_error:
-                            return qi, False, None, 0.0, retry_error
-                    else:
-                        return qi, False, None, 0.0, error
+                max_retries = max(3, config.settings.max_retries)
+                last_error = None
+
+                for attempt in range(1, max_retries + 1):
+                    try:
+                        result = generate(model, prompt, config.settings)
+                        score = bench.evaluate(q, result.text)
+                        return qi, True, result, score, None, False
+                    except Exception as error:
+                        last_error = error
+                        err_type = type(error).__name__
+                        err_msg = str(error).strip()
+
+                        if _is_fatal_error(error):
+                            console.print(
+                                f"  [bold red]❌ FATAL ERROR on Q{qi+1} ({err_type}): {err_msg}[/bold red]"
+                            )
+                            return qi, False, None, 0.0, error, True
+
+                        is_ratelimit = (
+                            "RateLimitError" in err_type
+                            or "429" in err_msg
+                            or "rate limit" in err_msg.lower()
+                            or "too many requests" in err_msg.lower()
+                        )
+
+                        if attempt < max_retries:
+                            wait_time = 60 if is_ratelimit else min(30, 5 * attempt)
+                            reason = "rate limited" if is_ratelimit else f"error ({err_type})"
+                            console.print(
+                                f"  [yellow]⚠️ Q{qi+1} {reason}: retrying ({attempt}/{max_retries}) in {wait_time}s...[/yellow]"
+                            )
+                            time.sleep(wait_time)
+                        else:
+                            console.print(
+                                f"  [red]❌ Q{qi+1} failed after {max_retries} attempts ({err_type}: {err_msg})[/red]"
+                            )
+
+                return qi, False, None, 0.0, last_error, False
 
             with Progress(
                 SpinnerColumn(),
@@ -162,7 +228,12 @@ def run_benchmarks(
                 with concurrent.futures.ThreadPoolExecutor(max_workers=config.settings.max_concurrency) as executor:
                     futures = {executor.submit(process_question, qi, q): qi for qi, q in enumerate(questions)}
                     for future in concurrent.futures.as_completed(futures):
-                        qi, success, result, score, error = future.result()
+                        qi, success, result, score, error, is_fatal = future.result()
+                        if is_fatal:
+                            fatal_error_encountered = True
+                            skip_model = True
+                            for f in futures:
+                                f.cancel()
                         if success:
                             scored += 1
                             detail: dict = {
@@ -191,6 +262,11 @@ def run_benchmarks(
                                 }
                             )
                         progress.advance(task)
+                        if fatal_error_encountered:
+                            console.print(
+                                f"  [bold red]Aborting {bench.display_name} and skipping remaining benchmarks for {model.name} due to fatal model error.[/bold red]"
+                            )
+                            break
 
             question_details.sort(key=lambda x: x["question_index"])
 
