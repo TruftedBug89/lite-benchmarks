@@ -81,8 +81,8 @@ settings:
   seed: 42
   max_tokens: 4096
   temperature: 0.0
-  request_timeout: 120
-  code_exec_timeout: 15
+  request_timeout: 300
+  code_exec_timeout: 30
   max_retries: 3
   retry_delay: 2.0
   results_dir: results
