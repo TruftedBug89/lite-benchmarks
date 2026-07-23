@@ -389,7 +389,7 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     _a("### Scoring")
     _a("- **All scoring is programmatic** — no LLM-as-judge is used anywhere")
     _a(
-        "- Code benchmarks are skipped unless `--allow-unsafe-code-execution` is passed in an isolated sandbox"
+        "- Code benchmarks are skipped unless `--unsafe` is passed in an isolated sandbox"
     )
     _a("- Multiple-choice benchmarks extract the answer letter and compare to ground truth")
     _a("- GSM8K extracts the final number (after `####`) and compares numerically")
@@ -448,7 +448,7 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     _a("py run_benchmark.py")
     _a("")
     _a("# Run code benchmarks only in an isolated sandbox; this executes model-generated Python")
-    _a("py run_benchmark.py --allow-unsafe-code-execution --benchmarks humaneval mbpp bigcodebench")
+    _a("py run_benchmark.py --unsafe --benchmarks humaneval mbpp bigcodebench")
     _a("")
     _a("# Run specific benchmarks only")
     _a("py run_benchmark.py --benchmarks humaneval mbpp gsm8k")

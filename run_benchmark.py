@@ -16,6 +16,7 @@ import argparse
 import json
 import sys
 import tempfile
+import time
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -98,7 +99,7 @@ def run_benchmarks(
             if bench.requires_code_execution and not config.settings.allow_unsafe_code_execution:
                 console.print(
                     f"  [yellow]Skipped {bench.display_name}: it executes untrusted generated "
-                    "code. Re-run with --allow-unsafe-code-execution only inside an isolated sandbox.[/yellow]"
+                    "code. Re-run with --unsafe only inside an isolated sandbox.[/yellow]"
                 )
                 continue
             try:
@@ -127,36 +128,55 @@ def run_benchmarks(
                         result = generate(model.id, prompt, config.settings)
                         score = bench.evaluate(q, result.text)
                     except Exception as error:
-                        console.print(
-                            f"\n  [yellow]Excluded {model.name}/{bname} q{qi}: "
-                            f"{type(error).__name__}[/yellow]"
-                        )
-                        failed += 1
-                        result = None
-                        question_details.append(
-                            {
-                                "question_index": qi,
-                                "status": "error",
-                                "error_type": type(error).__name__,
-                            }
-                        )
-                    else:
-                        scored += 1
-                        detail: dict = {
-                            "question_index": qi,
-                            "status": "scored",
-                            "score": score,
-                            "input_tokens": result.input_tokens,
-                            "output_tokens": result.output_tokens,
-                            "thinking_tokens": result.thinking_tokens,
-                            "total_tokens": result.total_tokens,
-                        }
-                        if result.total_time_ms is not None:
-                            detail["total_time_ms"] = round(result.total_time_ms, 1)
-                        if result.tokens_per_second is not None:
-                            detail["tokens_per_second"] = round(result.tokens_per_second, 2)
-                        question_details.append(detail)
-                        correct += int(score)
+                        if "RateLimitError" in type(error).__name__:
+                            console.print(
+                                f"\n  [yellow]Rate limited on {model.name}/{bname} q{qi}. "
+                                "Waiting 60s...[/yellow]"
+                            )
+                            time.sleep(60)
+                            try:
+                                result = generate(model.id, prompt, config.settings)
+                                score = bench.evaluate(q, result.text)
+                            except Exception as retry_error:
+                                if "RateLimitError" in type(retry_error).__name__:
+                                    console.print(
+                                        "\n  [red]Rate limited again after retry. "
+                                        "Aborting run.[/red]"
+                                    )
+                                    sys.exit(1)
+                                raise
+                        else:
+                            console.print(
+                                f"\n  [yellow]Excluded {model.name}/{bname} q{qi}: "
+                                f"{type(error).__name__}[/yellow]"
+                            )
+                            failed += 1
+                            question_details.append(
+                                {
+                                    "question_index": qi,
+                                    "status": "error",
+                                    "error_type": type(error).__name__,
+                                }
+                            )
+                            progress.advance(task)
+                            continue
+
+                    scored += 1
+                    detail: dict = {
+                        "question_index": qi,
+                        "status": "scored",
+                        "score": score,
+                        "input_tokens": result.input_tokens,
+                        "output_tokens": result.output_tokens,
+                        "thinking_tokens": result.thinking_tokens,
+                        "total_tokens": result.total_tokens,
+                    }
+                    if result.total_time_ms is not None:
+                        detail["total_time_ms"] = round(result.total_time_ms, 1)
+                    if result.tokens_per_second is not None:
+                        detail["tokens_per_second"] = round(result.tokens_per_second, 2)
+                    question_details.append(detail)
+                    correct += int(score)
                     progress.advance(task)
 
             if scored == 0:
@@ -302,7 +322,7 @@ def main():
     )
     parser.add_argument("--list", action="store_true", help="List configured models and benchmarks")
     parser.add_argument(
-        "--allow-unsafe-code-execution",
+        "--unsafe",
         action="store_true",
         help="Run code benchmarks locally. Use only inside an isolated sandbox.",
     )
@@ -312,7 +332,7 @@ def main():
         config = load_config(args.config)
     except (FileNotFoundError, ValueError) as error:
         parser.error(str(error))
-    if args.allow_unsafe_code_execution:
+    if args.unsafe:
         config = replace(
             config,
             settings=replace(config.settings, allow_unsafe_code_execution=True),
