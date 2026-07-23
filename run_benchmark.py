@@ -23,7 +23,7 @@ from rich.table import Table
 
 from lite_bench.benchmarks import create_benchmark
 from lite_bench.charts import generate_all as generate_charts
-from lite_bench.config import load_config
+from lite_bench.config import ModelConfig, load_config
 from lite_bench.providers import generate
 from lite_bench.readme_gen import write_readme
 
@@ -31,12 +31,16 @@ console = Console()
 
 
 def run_benchmarks(config, model_filter: list[str] | None, bench_filter: list[str] | None) -> dict:
-    models = config.models
     if model_filter:
-        models = [m for m in models if m.id in model_filter or m.name in model_filter]
-        if not models:
-            console.print("[red]No models matched the filter.[/red]")
-            sys.exit(1)
+        models = []
+        for mid in model_filter:
+            match = next((m for m in config.models if m.id == mid or m.name == mid), None)
+            if match:
+                models.append(match)
+            else:
+                models.append(ModelConfig(id=mid, name=mid))
+    else:
+        models = config.models
 
     benchmarks = config.enabled_benchmarks()
     if bench_filter:
