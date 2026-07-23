@@ -17,6 +17,9 @@ class ModelConfig:
 
     id: str
     name: str
+    thinking_effort: str | None = None
+    extra_params: dict[str, Any] = field(default_factory=dict)
+
 
 
 @dataclass(frozen=True)
@@ -40,6 +43,7 @@ class Settings:
     request_timeout: int = 120
     code_exec_timeout: int = 15
     max_retries: int = 3
+    max_concurrency: int = 5
     results_dir: str = "results"
     charts_dir: str = "charts"
     hf_token_env: str = "HF_TOKEN"
@@ -130,7 +134,21 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         item = _mapping(value, f"models[{index}]")
         model_id = _string(item.get("id"), f"models[{index}].id")
         name = _string(item.get("name", model_id), f"models[{index}].name")
-        models.append(ModelConfig(id=model_id, name=name))
+        thinking_effort = item.get("thinking_effort")
+        if thinking_effort is not None:
+            thinking_effort = _string(thinking_effort, f"models[{index}].thinking_effort")
+        extra_params = item.get("extra_params", {})
+        if not isinstance(extra_params, Mapping):
+            raise ValueError(f"models[{index}].extra_params must be a mapping.")
+        models.append(
+            ModelConfig(
+                id=model_id,
+                name=name,
+                thinking_effort=thinking_effort,
+                extra_params=dict(extra_params),
+            )
+        )
+
     if len({model.id for model in models}) != len(models):
         raise ValueError("Model IDs must be unique.")
     if len({model.name for model in models}) != len(models):
@@ -198,6 +216,7 @@ def load_config(path: str | Path = "config.yaml") -> Config:
             raw_settings.get("code_exec_timeout", 15), "settings.code_exec_timeout"
         ),
         max_retries=_nonnegative_int(raw_settings.get("max_retries", 3), "settings.max_retries"),
+        max_concurrency=_positive_int(raw_settings.get("max_concurrency", 5), "settings.max_concurrency"),
         results_dir=_string(raw_settings.get("results_dir", "results"), "settings.results_dir"),
         charts_dir=_string(raw_settings.get("charts_dir", "charts"), "settings.charts_dir"),
         hf_token_env=_string(raw_settings.get("hf_token_env", "HF_TOKEN"), "settings.hf_token_env"),

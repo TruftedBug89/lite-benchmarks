@@ -44,6 +44,23 @@ categories:
             path.write_text(content, encoding="utf-8")
             self.assertEqual(load_config(path).benchmarks["sample"].revision, "abcdef")
 
+    def test_thinking_effort_and_extra_params_are_loaded(self) -> None:
+        content = """
+models:
+  - id: provider/model-one
+    name: Model One (Max Thinking)
+    thinking_effort: max
+    extra_params:
+      custom_param: 123
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.yaml"
+            path.write_text(content, encoding="utf-8")
+            cfg = load_config(path)
+            self.assertEqual(cfg.models[0].thinking_effort, "max")
+            self.assertEqual(cfg.models[0].extra_params, {"custom_param": 123})
+
+
 
 if __name__ == "__main__":
     unittest.main()

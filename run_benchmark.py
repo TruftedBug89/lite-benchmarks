@@ -19,6 +19,7 @@ import tempfile
 import time
 from dataclasses import replace
 from datetime import datetime, timezone
+import concurrent.futures
 from pathlib import Path
 
 from rich.console import Console
@@ -71,15 +72,26 @@ def _benchmark_scores(model_results: dict) -> dict[str, float]:
 
 
 def run_benchmarks(
-    config: Config, model_filter: list[str] | None, bench_filter: list[str] | None
+    config: Config, model_filter: list[str] | None, bench_filter: list[str] | None, existing_results: dict | None = None, quant: str | None = None
 ) -> dict:
+    if existing_results is None:
+        existing_results = {}
     if model_filter:
         models = []
         for mid in model_filter:
             match = next((m for m in config.models if m.id == mid or m.name == mid), None)
-            models.append(match or ModelConfig(id=mid, name=mid))
+            base_name = match.name if match else mid
+            name = f"{base_name} ({quant})" if quant else base_name
+            
+            if match:
+                models.append(replace(match, name=name))
+            else:
+                models.append(ModelConfig(id=mid, name=name))
     else:
-        models = config.models
+        models = []
+        for m in config.models:
+            name = f"{m.name} ({quant})" if quant and ("lm_studio" in m.id or "ollama" in m.id) else m.name
+            models.append(replace(m, name=name))
 
     benchmarks = config.enabled_benchmarks()
     if bench_filter:
@@ -88,11 +100,14 @@ def run_benchmarks(
             console.print("[red]No benchmarks matched the filter.[/red]")
             sys.exit(1)
 
-    results: dict[str, dict] = {}
+    results: dict[str, dict] = existing_results.copy()
 
     for model in models:
         console.print(f"\n[bold blue]━━━ {model.name} ({model.id}) ━━━[/bold blue]")
-        results[model.name] = {"model_id": model.id}
+        if model.name not in results:
+            results[model.name] = {"model_id": model.id}
+        if model.thinking_effort:
+            results[model.name]["thinking_effort"] = model.thinking_effort
 
         for bname, bconf in benchmarks.items():
             bench = create_benchmark(bname, bconf, config.settings)
@@ -114,6 +129,24 @@ def run_benchmarks(
             failed = 0
             question_details: list[dict] = []
 
+            def process_question(qi: int, q: dict):
+                prompt = bench.format_prompt(q)
+                try:
+                    result = generate(model, prompt, config.settings)
+                    score = bench.evaluate(q, result.text)
+                    return qi, True, result, score, None
+                except Exception as error:
+                    if "RateLimitError" in type(error).__name__:
+                        time.sleep(60)
+                        try:
+                            result = generate(model, prompt, config.settings)
+                            score = bench.evaluate(q, result.text)
+                            return qi, True, result, score, None
+                        except Exception as retry_error:
+                            return qi, False, None, 0.0, retry_error
+                    else:
+                        return qi, False, None, 0.0, error
+
             with Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
@@ -122,34 +155,29 @@ def run_benchmarks(
                 console=console,
             ) as progress:
                 task = progress.add_task(f"  {bench.display_name}", total=requested)
-                for qi, q in enumerate(questions):
-                    prompt = bench.format_prompt(q)
-                    try:
-                        result = generate(model.id, prompt, config.settings)
-                        score = bench.evaluate(q, result.text)
-                    except Exception as error:
-                        if "RateLimitError" in type(error).__name__:
-                            console.print(
-                                f"\n  [yellow]Rate limited on {model.name}/{bname} q{qi}. "
-                                "Waiting 60s...[/yellow]"
-                            )
-                            time.sleep(60)
-                            try:
-                                result = generate(model.id, prompt, config.settings)
-                                score = bench.evaluate(q, result.text)
-                            except Exception as retry_error:
-                                if "RateLimitError" in type(retry_error).__name__:
-                                    console.print(
-                                        "\n  [red]Rate limited again after retry. "
-                                        "Aborting run.[/red]"
-                                    )
-                                    sys.exit(1)
-                                raise
+                
+                with concurrent.futures.ThreadPoolExecutor(max_workers=config.settings.max_concurrency) as executor:
+                    futures = {executor.submit(process_question, qi, q): qi for qi, q in enumerate(questions)}
+                    for future in concurrent.futures.as_completed(futures):
+                        qi, success, result, score, error = future.result()
+                        if success:
+                            scored += 1
+                            detail: dict = {
+                                "question_index": qi,
+                                "status": "scored",
+                                "score": score,
+                                "input_tokens": result.input_tokens,
+                                "output_tokens": result.output_tokens,
+                                "thinking_tokens": result.thinking_tokens,
+                                "total_tokens": result.total_tokens,
+                            }
+                            if result.total_time_ms is not None:
+                                detail["total_time_ms"] = round(result.total_time_ms, 1)
+                            if result.tokens_per_second is not None:
+                                detail["tokens_per_second"] = round(result.tokens_per_second, 2)
+                            question_details.append(detail)
+                            correct += int(score)
                         else:
-                            console.print(
-                                f"\n  [yellow]Excluded {model.name}/{bname} q{qi}: "
-                                f"{type(error).__name__}[/yellow]"
-                            )
                             failed += 1
                             question_details.append(
                                 {
@@ -158,26 +186,9 @@ def run_benchmarks(
                                     "error_type": type(error).__name__,
                                 }
                             )
-                            progress.advance(task)
-                            continue
+                        progress.advance(task)
 
-                    scored += 1
-                    detail: dict = {
-                        "question_index": qi,
-                        "status": "scored",
-                        "score": score,
-                        "input_tokens": result.input_tokens,
-                        "output_tokens": result.output_tokens,
-                        "thinking_tokens": result.thinking_tokens,
-                        "total_tokens": result.total_tokens,
-                    }
-                    if result.total_time_ms is not None:
-                        detail["total_time_ms"] = round(result.total_time_ms, 1)
-                    if result.tokens_per_second is not None:
-                        detail["tokens_per_second"] = round(result.tokens_per_second, 2)
-                    question_details.append(detail)
-                    correct += int(score)
-                    progress.advance(task)
+            question_details.sort(key=lambda x: x["question_index"])
 
             if scored == 0:
                 console.print(
@@ -190,8 +201,17 @@ def run_benchmarks(
                 [detail for detail in question_details if detail["status"] == "scored"]
             )
 
+            new_score = score_pct
+            old_bdata = results[model.name].get(bname)
+            if old_bdata and isinstance(old_bdata, dict) and "score" in old_bdata:
+                if old_bdata["score"] >= new_score:
+                    console.print(f"  [dim]Keeping previous best score for {bench.display_name}: {old_bdata['score']:.0%} (New: {new_score:.0%})[/dim]")
+                    continue
+                else:
+                    console.print(f"  [dim]New best score for {bench.display_name}! {new_score:.0%} > {old_bdata['score']:.0%}[/dim]")
+
             results[model.name][bname] = {
-                "score": score_pct,
+                "score": new_score,
                 "correct": correct,
                 "total": scored,
                 "requested": requested,
@@ -201,9 +221,15 @@ def run_benchmarks(
             }
             console.print(
                 f"  [green]{bench.display_name}:[/green] "
-                f"{correct}/{scored} ({score_pct:.0%})"
+                f"{correct}/{scored} ({new_score:.0%})"
                 + (f" [dim]{failed} errors excluded[/dim]" if failed else "")
             )
+
+        # Checkpoint partial results after each model
+        try:
+            save_results(results, config)
+        except Exception:
+            pass
 
     return results
 
@@ -320,6 +346,10 @@ def main():
         action="store_true",
         help="Regenerate README + charts from latest results (no API calls)",
     )
+    parser.add_argument(
+        "--quant", 
+        help="Quantization info for local models (e.g. Q4_K_M), appended to model name"
+    )
     parser.add_argument("--list", action="store_true", help="List configured models and benchmarks")
     parser.add_argument(
         "--unsafe",
@@ -357,9 +387,10 @@ def main():
             console.print("[red]No results found. Run benchmarks first.[/red]")
             sys.exit(1)
     else:
+        existing_results = load_latest_results(config) or {}
         if not config.models and not args.models:
             parser.error("No models are configured. Add one to config.yaml or pass --models.")
-        results = run_benchmarks(config, args.models, args.benchmarks)
+        results = run_benchmarks(config, args.models, args.benchmarks, existing_results, args.quant)
         path = save_results(results, config)
         console.print(f"\n[dim]Results saved to {path}[/dim]")
 

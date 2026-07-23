@@ -52,9 +52,17 @@ def load_questions(bench: BenchmarkConfig, settings: Settings) -> list[dict]:
         raise ValueError(f"Dataset {bench.dataset!r} split {bench.split!r} contains no examples.")
 
     n = min(bench.num_samples, available)
-    ds = ds.shuffle(seed=settings.seed).select(range(n))
+    if available <= n:
+        indices = list(range(available))
+    elif n == 1:
+        indices = [available - 1]
+    else:
+        indices = [int(i * (available - 1) / (n - 1)) for i in range(n)]
+
+    ds = ds.select(indices)
 
     questions = [dict(row) for row in ds]
     _cache[cache_key] = questions
-    console.print(f"  [dim]Sampled {len(questions)} questions from {available} available[/dim]")
+    console.print(f"  [dim]Sampled {len(questions)} questions from {available} available (uniform strided)[/dim]")
     return questions
+

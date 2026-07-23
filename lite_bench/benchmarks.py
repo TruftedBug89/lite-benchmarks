@@ -62,6 +62,29 @@ def _extract_letter(response: str, valid: set[str] | None = None) -> str | None:
     return None
 
 
+def _extract_boxed(text: str) -> str | None:
+    m = re.findall(r"\\boxed\{([^{}]+)\}", text)
+    if m:
+        return m[-1].strip()
+    idx = text.rfind(r"\boxed{")
+    if idx != -1:
+        substr = text[idx + 7 :]
+        open_braces = 1
+        chars = []
+        for c in substr:
+            if c == "{":
+                open_braces += 1
+            elif c == "}":
+                open_braces -= 1
+                if open_braces == 0:
+                    break
+            chars.append(c)
+        if chars:
+            return "".join(chars).strip()
+    return None
+
+
+
 def _execute_code(code: str, timeout: int) -> bool:
     fd, path = tempfile.mkstemp(suffix=".py")
     try:
@@ -333,19 +356,155 @@ class IFEvalBenchmark(BenchmarkBase):
 
 
 # ---------------------------------------------------------------------------
+# HumanEval+ — EvalPlus augmented HumanEval
+# ---------------------------------------------------------------------------
+
+
+class HumanEvalPlusBenchmark(HumanEvalBenchmark):
+    name = "humanevalplus"
+    display_name = "HumanEval+"
+
+
+# ---------------------------------------------------------------------------
+# MBPP+ — EvalPlus augmented MBPP
+# ---------------------------------------------------------------------------
+
+
+class MBPPPlusBenchmark(MBPPBenchmark):
+    name = "mbppplus"
+    display_name = "MBPP+"
+
+
+# ---------------------------------------------------------------------------
+# BigCodeBench-Hard — Practical Python with complex libraries (Hard subset)
+# ---------------------------------------------------------------------------
+
+
+class BigCodeBenchHardBenchmark(BigCodeBenchBenchmark):
+    name = "bigcodebench_hard"
+    display_name = "BigCodeBench-Hard"
+
+
+# ---------------------------------------------------------------------------
+# SciBench — College-level scientific textbook problem solving
+# ---------------------------------------------------------------------------
+
+
+class SciBenchBenchmark(BenchmarkBase):
+    name = "scibench"
+    display_name = "SciBench"
+
+    def format_prompt(self, q: dict) -> str:
+        text = q.get("problem_text") or q.get("question", "")
+        unit = q.get("unit", "")
+        unit_str = f" Unit: {unit}." if unit else ""
+        return (
+            "Solve the following college-level science problem step-by-step.\n\n"
+            f"{text}{unit_str}\n\n"
+            "End your response with '\\boxed{<answer>}' containing your final numerical or symbol answer."
+        )
+
+    def evaluate(self, q: dict, response: str) -> float:
+        gold = q.get("answer_number") or q.get("answer_latex") or q.get("solution", "")
+        pred = _extract_boxed(response) or _extract_number(response)
+        if pred is None or not str(gold).strip():
+            return 0.0
+        gold_str = str(gold).strip()
+        if pred.strip() == gold_str:
+            return 1.0
+        try:
+            return 1.0 if abs(float(pred) - float(gold_str)) < 1e-4 else 0.0
+        except ValueError:
+            return 0.0
+
+
+# ---------------------------------------------------------------------------
+# AIME — American Invitational Mathematics Examination competition math
+# ---------------------------------------------------------------------------
+
+
+class AIMEBenchmark(BenchmarkBase):
+    name = "aime"
+    display_name = "AIME 2024/2025"
+
+    def format_prompt(self, q: dict) -> str:
+        problem = q.get("problem") or q.get("question", "")
+        return (
+            "Solve the following competition math problem step-by-step.\n"
+            "End your response with '\\boxed{<integer>}' containing your final integer answer.\n\n"
+            f"Problem: {problem}"
+        )
+
+    def evaluate(self, q: dict, response: str) -> float:
+        gold = q.get("answer") or q.get("solution", "")
+        gold_num = _extract_number(str(gold))
+        if gold_num is None:
+            return 0.0
+        pred_boxed = _extract_boxed(response)
+        pred_num = _extract_number(pred_boxed) if pred_boxed else _extract_number(response)
+        if pred_num is None:
+            return 0.0
+        try:
+            return 1.0 if float(gold_num) == float(pred_num) else 0.0
+        except ValueError:
+            return 0.0
+
+
+# ---------------------------------------------------------------------------
+# MATH-500 — Competition math problems (Hendrycks MATH level 1-5)
+# ---------------------------------------------------------------------------
+
+
+class MATH500Benchmark(BenchmarkBase):
+    name = "math_500"
+    display_name = "MATH-500"
+
+    def format_prompt(self, q: dict) -> str:
+        problem = q.get("problem") or q.get("question", "")
+        return (
+            "Solve the following math problem step-by-step.\n"
+            "End your response with '\\boxed{<answer>}' containing your final answer.\n\n"
+            f"Problem: {problem}"
+        )
+
+    def evaluate(self, q: dict, response: str) -> float:
+        gold = q.get("answer") or q.get("solution", "")
+        gold_boxed = _extract_boxed(str(gold)) or str(gold).strip()
+        pred_boxed = _extract_boxed(response)
+        if pred_boxed and pred_boxed.strip() == gold_boxed:
+            return 1.0
+        gold_num = _extract_number(str(gold))
+        pred_num = _extract_number(response)
+        if gold_num is not None and pred_num is not None:
+            try:
+                if float(gold_num) == float(pred_num):
+                    return 1.0
+            except ValueError:
+                pass
+        return 0.0
+
+
+# ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
 
 BENCHMARK_CLASSES: dict[str, type[BenchmarkBase]] = {
     "humaneval": HumanEvalBenchmark,
+    "humanevalplus": HumanEvalPlusBenchmark,
     "mbpp": MBPPBenchmark,
+    "mbppplus": MBPPPlusBenchmark,
     "bigcodebench": BigCodeBenchBenchmark,
+    "bigcodebench_hard": BigCodeBenchHardBenchmark,
     "gpqa": GPQABenchmark,
+    "scibench": SciBenchBenchmark,
     "arc": ARCBenchmark,
     "gsm8k": GSM8KBenchmark,
+    "aime": AIMEBenchmark,
+    "math_500": MATH500Benchmark,
     "mmlu_pro": MMLUProBenchmark,
     "ifeval": IFEvalBenchmark,
 }
+
 
 
 def create_benchmark(name: str, config: BenchmarkConfig, settings: Settings) -> BenchmarkBase:

@@ -16,7 +16,9 @@ from dataclasses import dataclass
 import litellm
 from rich.console import Console
 
-from .config import Settings
+from typing import Any
+
+from .config import ModelConfig, Settings
 
 console = Console()
 
@@ -70,19 +72,56 @@ def _is_local(model_id: str) -> bool:
     return model_id.startswith(LOCAL_PREFIXES)
 
 
-def generate(model_id: str, prompt: str, settings: Settings) -> GenerationResult:
+def _map_reasoning_effort(effort: str) -> str:
+    effort_lower = effort.lower()
+    if effort_lower in ("max", "xhigh", "ultracode", "high"):
+        return "high"
+    elif effort_lower in ("medium", "mid"):
+        return "medium"
+    elif effort_lower in ("low", "min"):
+        return "low"
+    return effort_lower
+
+
+def generate(model: ModelConfig | str, prompt: str, settings: Settings) -> GenerationResult:
     """Call any LiteLLM-supported model with full telemetry."""
+    if isinstance(model, ModelConfig):
+        model_id = model.id
+        thinking_effort = model.thinking_effort
+        extra_params = model.extra_params
+    else:
+        model_id = model
+        thinking_effort = None
+        extra_params = {}
+
     local = _is_local(model_id)
 
+    kwargs: dict[str, Any] = {
+        "model": model_id,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": settings.max_tokens,
+        "temperature": settings.temperature,
+        "timeout": settings.request_timeout,
+        "num_retries": settings.max_retries,
+    }
+
+    if thinking_effort:
+        kwargs["reasoning_effort"] = _map_reasoning_effort(thinking_effort)
+    if extra_params:
+        kwargs.update(extra_params)
+
     start = time.perf_counter()
-    response = litellm.completion(
-        model=model_id,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=settings.max_tokens,
-        temperature=settings.temperature,
-        timeout=settings.request_timeout,
-        num_retries=settings.max_retries,
-    )
+    try:
+        response = litellm.completion(**kwargs)
+    except Exception as e:
+        if "reasoning_effort" in kwargs and any(
+            msg in str(e).lower() for msg in ("unsupported", "unexpected keyword", "not supported", "invalid parameter")
+        ):
+            kwargs.pop("reasoning_effort", None)
+            response = litellm.completion(**kwargs)
+        else:
+            raise
+
     elapsed_ms = (time.perf_counter() - start) * 1000
 
     usage = getattr(response, "usage", None)
@@ -115,3 +154,4 @@ def generate(model_id: str, prompt: str, settings: Settings) -> GenerationResult
         total_time_ms=time_ms,
         tokens_per_second=tps,
     )
+

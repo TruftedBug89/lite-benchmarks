@@ -29,7 +29,19 @@ CATEGORY_ICONS = {
 }
 
 BENCHMARK_INFO: dict[str, dict] = {
-    "humaneval": {
+    "bigcodebench_hard": {
+        "display": "BigCodeBench-Hard",
+        "category": "Coding",
+        "total": "148",
+        "verification": "Python unittest execution (explicit opt-in required)",
+        "source": "bigcode/bigcodebench-hard (v0.1.4)",
+        "paper": "Zhuo et al. 2024",
+        "description": (
+            "The hardest 148 practical Python programming tasks from BigCodeBench requiring "
+            "deep integration of complex real-world libraries (pandas, numpy, scipy, etc.)."
+        ),
+    },
+    "humanevalplus": {
         "display": "HumanEval+",
         "category": "Coding",
         "total": "164",
@@ -37,13 +49,11 @@ BENCHMARK_INFO: dict[str, dict] = {
         "source": "evalplus/humanevalplus",
         "paper": "Chen et al. 2021, augmented by Liu et al. 2023 (EvalPlus)",
         "description": (
-            "164 hand-written Python functions with docstrings. The model must "
-            "generate a working implementation. The source dataset includes EvalPlus "
-            "test cases. This runner executes the supplied test program locally only "
-            "after an explicit unsafe-code-execution opt-in."
+            "164 hand-written Python functions with docstrings and rigorously expanded "
+            "test cases to catch edge-case bugs and hallucinated solutions."
         ),
     },
-    "mbpp": {
+    "mbppplus": {
         "display": "MBPP+",
         "category": "Coding",
         "total": "378",
@@ -51,11 +61,31 @@ BENCHMARK_INFO: dict[str, dict] = {
         "source": "evalplus/mbppplus",
         "paper": "Austin et al. 2021, augmented by Liu et al. 2023 (EvalPlus)",
         "description": (
-            "378 crowd-sourced Python programming problems from the hosted EvalPlus "
-            "dataset "
-            "designed for entry-level programmers. Each problem has a natural-language "
-            "description and assert-based test cases. EvalPlus expands the original "
-            "test suites for deeper coverage."
+            "378 crowd-sourced Python programming problems with heavily augmented "
+            "test suites from EvalPlus for deep coverage."
+        ),
+    },
+    "humaneval": {
+        "display": "HumanEval",
+        "category": "Coding",
+        "total": "164",
+        "verification": "Python test execution (explicit opt-in required)",
+        "source": "evalplus/humanevalplus",
+        "paper": "Chen et al. 2021",
+        "description": (
+            "164 hand-written Python functions with docstrings. The model must "
+            "generate a working implementation."
+        ),
+    },
+    "mbpp": {
+        "display": "MBPP",
+        "category": "Coding",
+        "total": "378",
+        "verification": "Python test execution (explicit opt-in required)",
+        "source": "evalplus/mbppplus",
+        "paper": "Austin et al. 2021",
+        "description": (
+            "378 crowd-sourced Python programming problems designed for entry-level programmers."
         ),
     },
     "bigcodebench": {
@@ -66,11 +96,7 @@ BENCHMARK_INFO: dict[str, dict] = {
         "source": "bigcode/bigcodebench (v0.1.4)",
         "paper": "Zhuo et al. 2024",
         "description": (
-            "Practical Python programming tasks requiring use of real-world libraries "
-            "(collections, itertools, json, re, os, and more). Unlike HumanEval/MBPP "
-            "which test algorithmic function completion, BigCodeBench tests whether "
-            "models can write code that integrates multiple library calls to solve "
-            "realistic tasks. Verified with unittest-based test suites."
+            "Practical Python programming tasks requiring use of real-world libraries."
         ),
     },
     "gpqa": {
@@ -82,10 +108,19 @@ BENCHMARK_INFO: dict[str, dict] = {
         "paper": "Rein et al. 2023",
         "description": (
             "198 graduate-level questions in physics, chemistry, and biology written "
-            "by domain experts. The Diamond subset contains questions where both domain "
-            "experts agreed on the answer but non-experts scored only 34% even with "
-            'unrestricted internet access — making them genuinely "Google-proof". '
-            "This is the hardest standard science benchmark for LLMs."
+            "by domain experts. Google-proof questions where non-experts score only 34% with internet."
+        ),
+    },
+    "scibench": {
+        "display": "SciBench",
+        "category": "Science",
+        "total": "692",
+        "verification": "Numerical / Formula exact match",
+        "source": "xw27/scibench",
+        "paper": "Wang et al. 2023",
+        "description": (
+            "College-level scientific textbook problem solving in physics, chemistry, "
+            "and thermodynamics requiring multi-step quantitative calculations."
         ),
     },
     "arc": {
@@ -96,10 +131,7 @@ BENCHMARK_INFO: dict[str, dict] = {
         "source": "allenai/ai2_arc (ARC-Challenge)",
         "paper": "Clark et al. 2018",
         "description": (
-            "Grade-school science questions from the AI2 Reasoning Challenge. The "
-            "Challenge subset contains questions that neither a retrieval-based algorithm "
-            "nor a word-co-occurrence algorithm could answer correctly — requiring "
-            "genuine scientific reasoning rather than pattern matching."
+            "Grade-school science questions from the AI2 Reasoning Challenge."
         ),
     },
     "gsm8k": {
@@ -110,10 +142,31 @@ BENCHMARK_INFO: dict[str, dict] = {
         "source": "openai/gsm8k (main)",
         "paper": "Cobbe et al. 2021",
         "description": (
-            "Grade-school math word problems requiring multi-step arithmetic reasoning. "
-            "Each problem has a chain-of-thought solution ending with a final numerical "
-            "answer after '####'. Scored by extracting the model's final number and "
-            "comparing it to the ground truth."
+            "Grade-school math word problems requiring multi-step arithmetic reasoning."
+        ),
+    },
+    "aime": {
+        "display": "AIME 2024/2025",
+        "category": "Math",
+        "total": "90",
+        "verification": "Integer exact match (000-999)",
+        "source": "AI-MO/aimo-validation-aime",
+        "paper": "MAA AIME Competition Problems",
+        "description": (
+            "American Invitational Mathematics Examination (AIME) high-school competition math problems. "
+            "Premier benchmark for evaluating advanced mathematical reasoning in SOTA AI models."
+        ),
+    },
+    "math_500": {
+        "display": "MATH-500",
+        "category": "Math",
+        "total": "500",
+        "verification": "Exact match / \\boxed{} extraction",
+        "source": "HuggingFaceH4/MATH-500",
+        "paper": "Hendrycks et al. 2021 / Lightman et al. 2023",
+        "description": (
+            "500 challenging competition math problems (Levels 1 to 5) across algebra, geometry, "
+            "number theory, calculus, and probability."
         ),
     },
     "mmlu_pro": {
@@ -127,8 +180,7 @@ BENCHMARK_INFO: dict[str, dict] = {
             "A harder successor to MMLU with 10 answer choices instead of 4, covering "
             "14 academic disciplines (biology, business, chemistry, computer science, "
             "economics, engineering, health, history, law, math, philosophy, physics, "
-            "psychology, other). The extra distractors significantly reduce random-guess "
-            "success and require deeper reasoning."
+            "psychology, other)."
         ),
     },
     "ifeval": {
@@ -142,8 +194,7 @@ BENCHMARK_INFO: dict[str, dict] = {
             "Tests whether models follow specific formatting and content instructions "
             "(word counts, paragraph structure, keyword inclusion/exclusion, JSON output, "
             "language constraints, etc.). Each prompt has one or more verifiable "
-            "constraints checked by 25 deterministic programmatic verifiers — no "
-            "LLM-as-judge needed. A response passes only if ALL constraints are satisfied."
+            "constraints checked by 25 deterministic programmatic verifiers."
         ),
     },
 }
@@ -276,11 +327,18 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
             medal = medals.get(i, str(i))
             score = overall[mname]
             overall_cell = f"**{score * 100:.1f}%**" if score is not None else "N/A"
-            row = f"| {medal} | **{mname}** | {overall_cell} |"
+            
+            # Identify thinking models
+            is_thinking = total_think_tokens.get(mname, 0) > 0 or results.get(mname, {}).get("thinking_effort") is not None
+            display_name = f"**{mname}** 🧠" if is_thinking else f"**{mname}**"
+            
+            row = f"| {medal} | {display_name} | {overall_cell} |"
             for cat in cat_names:
                 category_score = cat_scores[mname].get(cat)
                 row += f" {category_score * 100:.1f}% |" if category_score is not None else " N/A |"
             _a(row)
+        _a("")
+        _a("*🧠 indicates reasoning models that utilize thinking tokens or have explicit thinking effort configured.*")
         _a("")
 
     # ── Per-benchmark detail ────────────────────────────────────────
@@ -328,6 +386,10 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
         "tokens.png": (
             "Token Breakdown",
             "Stacked bar chart of input, thinking, and output tokens per model.",
+        ),
+        "thinking_scatter.png": (
+            "Thinking Effort vs Performance",
+            "Scatter plot showing if models that use more thinking tokens achieve higher overall scores.",
         ),
     }
     for cp in chart_paths:

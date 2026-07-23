@@ -11,21 +11,35 @@ benchmarks, grouped into 5 categories. Results, rankings, and charts below are
 
 | Benchmark | Category | Full Dataset | Sampled | Verification | Source |
 |-----------|----------|:-----------:|:-------:|-------------|--------|
+| **BigCodeBench-Hard** | Coding | 148 | 50 | Python unittest execution (explicit opt-in required) | `bigcode/bigcodebench-hard (v0.1.4)` |
 | **HumanEval+** | Coding | 164 | 50 | Python test execution (explicit opt-in required) | `evalplus/humanevalplus` |
 | **MBPP+** | Coding | 378 | 50 | Python test execution (explicit opt-in required) | `evalplus/mbppplus` |
-| **BigCodeBench** | Coding | 1,140 | 50 | Python unittest execution (explicit opt-in required) | `bigcode/bigcodebench (v0.1.4)` |
 | **GPQA Diamond** | Science | 198 | 50 | Multiple choice (4 options) | `nichenshun/gpqa_diamond (community mirror of Idavidrein/gpqa)` |
-| **ARC-Challenge** | Science | 1,172 | 50 | Multiple choice | `allenai/ai2_arc (ARC-Challenge)` |
-| **GSM8K** | Math | 1,319 | 50 | Numerical exact match (#### format) | `openai/gsm8k (main)` |
+| **SciBench** | Science | 692 | 50 | Numerical / Formula exact match | `xw27/scibench` |
+| **AIME 2024/2025** | Math | 90 | 50 | Integer exact match (000-999) | `AI-MO/aimo-validation-aime` |
+| **MATH-500** | Math | 500 | 50 | Exact match / \boxed{} extraction | `HuggingFaceH4/MATH-500` |
 | **MMLU-Pro** | Knowledge | 12,032 | 50 | Multiple choice (10 options) | `TIGER-Lab/MMLU-Pro` |
 | **IFEval** | Instruction | 541 | 50 | 25 programmatic verifiers (strict) | `google/IFEval` |
 
 ### Benchmark Details
 
 <details>
-<summary><b>HumanEval+</b> — 164 hand-written Python functions with docstrings. The model must generate a wor…</summary>
+<summary><b>BigCodeBench-Hard</b> — The hardest 148 practical Python programming tasks from BigCodeBench requiring d…</summary>
 
-164 hand-written Python functions with docstrings. The model must generate a working implementation. The source dataset includes EvalPlus test cases. This runner executes the supplied test program locally only after an explicit unsafe-code-execution opt-in.
+The hardest 148 practical Python programming tasks from BigCodeBench requiring deep integration of complex real-world libraries (pandas, numpy, scipy, etc.).
+
+- **Paper:** Zhuo et al. 2024
+- **Dataset:** `bigcode/bigcodebench-hard (v0.1.4)`
+- **Verification:** Python unittest execution (explicit opt-in required)
+- **Full dataset size:** 148 questions
+- **Sampled:** 50 questions (seed=42)
+
+</details>
+
+<details>
+<summary><b>HumanEval+</b> — 164 hand-written Python functions with docstrings and rigorously expanded test c…</summary>
+
+164 hand-written Python functions with docstrings and rigorously expanded test cases to catch edge-case bugs and hallucinated solutions.
 
 - **Paper:** Chen et al. 2021, augmented by Liu et al. 2023 (EvalPlus)
 - **Dataset:** `evalplus/humanevalplus`
@@ -36,9 +50,9 @@ benchmarks, grouped into 5 categories. Results, rankings, and charts below are
 </details>
 
 <details>
-<summary><b>MBPP+</b> — 378 crowd-sourced Python programming problems from the hosted EvalPlus dataset d…</summary>
+<summary><b>MBPP+</b> — 378 crowd-sourced Python programming problems with heavily augmented test suites…</summary>
 
-378 crowd-sourced Python programming problems from the hosted EvalPlus dataset designed for entry-level programmers. Each problem has a natural-language description and assert-based test cases. EvalPlus expands the original test suites for deeper coverage.
+378 crowd-sourced Python programming problems with heavily augmented test suites from EvalPlus for deep coverage.
 
 - **Paper:** Austin et al. 2021, augmented by Liu et al. 2023 (EvalPlus)
 - **Dataset:** `evalplus/mbppplus`
@@ -49,22 +63,9 @@ benchmarks, grouped into 5 categories. Results, rankings, and charts below are
 </details>
 
 <details>
-<summary><b>BigCodeBench</b> — Practical Python programming tasks requiring use of real-world libraries (collec…</summary>
-
-Practical Python programming tasks requiring use of real-world libraries (collections, itertools, json, re, os, and more). Unlike HumanEval/MBPP which test algorithmic function completion, BigCodeBench tests whether models can write code that integrates multiple library calls to solve realistic tasks. Verified with unittest-based test suites.
-
-- **Paper:** Zhuo et al. 2024
-- **Dataset:** `bigcode/bigcodebench (v0.1.4)`
-- **Verification:** Python unittest execution (explicit opt-in required)
-- **Full dataset size:** 1,140 questions
-- **Sampled:** 50 questions (seed=42)
-
-</details>
-
-<details>
 <summary><b>GPQA Diamond</b> — 198 graduate-level questions in physics, chemistry, and biology written by domai…</summary>
 
-198 graduate-level questions in physics, chemistry, and biology written by domain experts. The Diamond subset contains questions where both domain experts agreed on the answer but non-experts scored only 34% even with unrestricted internet access — making them genuinely "Google-proof". This is the hardest standard science benchmark for LLMs.
+198 graduate-level questions in physics, chemistry, and biology written by domain experts. Google-proof questions where non-experts score only 34% with internet.
 
 - **Paper:** Rein et al. 2023
 - **Dataset:** `nichenshun/gpqa_diamond (community mirror of Idavidrein/gpqa)`
@@ -75,27 +76,40 @@ Practical Python programming tasks requiring use of real-world libraries (collec
 </details>
 
 <details>
-<summary><b>ARC-Challenge</b> — Grade-school science questions from the AI2 Reasoning Challenge. The Challenge s…</summary>
+<summary><b>SciBench</b> — College-level scientific textbook problem solving in physics, chemistry, and the…</summary>
 
-Grade-school science questions from the AI2 Reasoning Challenge. The Challenge subset contains questions that neither a retrieval-based algorithm nor a word-co-occurrence algorithm could answer correctly — requiring genuine scientific reasoning rather than pattern matching.
+College-level scientific textbook problem solving in physics, chemistry, and thermodynamics requiring multi-step quantitative calculations.
 
-- **Paper:** Clark et al. 2018
-- **Dataset:** `allenai/ai2_arc (ARC-Challenge)`
-- **Verification:** Multiple choice
-- **Full dataset size:** 1,172 questions
+- **Paper:** Wang et al. 2023
+- **Dataset:** `xw27/scibench`
+- **Verification:** Numerical / Formula exact match
+- **Full dataset size:** 692 questions
 - **Sampled:** 50 questions (seed=42)
 
 </details>
 
 <details>
-<summary><b>GSM8K</b> — Grade-school math word problems requiring multi-step arithmetic reasoning. Each …</summary>
+<summary><b>AIME 2024/2025</b> — American Invitational Mathematics Examination (AIME) high-school competition mat…</summary>
 
-Grade-school math word problems requiring multi-step arithmetic reasoning. Each problem has a chain-of-thought solution ending with a final numerical answer after '####'. Scored by extracting the model's final number and comparing it to the ground truth.
+American Invitational Mathematics Examination (AIME) high-school competition math problems. Premier benchmark for evaluating advanced mathematical reasoning in SOTA AI models.
 
-- **Paper:** Cobbe et al. 2021
-- **Dataset:** `openai/gsm8k (main)`
-- **Verification:** Numerical exact match (#### format)
-- **Full dataset size:** 1,319 questions
+- **Paper:** MAA AIME Competition Problems
+- **Dataset:** `AI-MO/aimo-validation-aime`
+- **Verification:** Integer exact match (000-999)
+- **Full dataset size:** 90 questions
+- **Sampled:** 50 questions (seed=42)
+
+</details>
+
+<details>
+<summary><b>MATH-500</b> — 500 challenging competition math problems (Levels 1 to 5) across algebra, geomet…</summary>
+
+500 challenging competition math problems (Levels 1 to 5) across algebra, geometry, number theory, calculus, and probability.
+
+- **Paper:** Hendrycks et al. 2021 / Lightman et al. 2023
+- **Dataset:** `HuggingFaceH4/MATH-500`
+- **Verification:** Exact match / \boxed{} extraction
+- **Full dataset size:** 500 questions
 - **Sampled:** 50 questions (seed=42)
 
 </details>
@@ -103,7 +117,7 @@ Grade-school math word problems requiring multi-step arithmetic reasoning. Each 
 <details>
 <summary><b>MMLU-Pro</b> — A harder successor to MMLU with 10 answer choices instead of 4, covering 14 acad…</summary>
 
-A harder successor to MMLU with 10 answer choices instead of 4, covering 14 academic disciplines (biology, business, chemistry, computer science, economics, engineering, health, history, law, math, philosophy, physics, psychology, other). The extra distractors significantly reduce random-guess success and require deeper reasoning.
+A harder successor to MMLU with 10 answer choices instead of 4, covering 14 academic disciplines (biology, business, chemistry, computer science, economics, engineering, health, history, law, math, philosophy, physics, psychology, other).
 
 - **Paper:** Wang et al. 2024
 - **Dataset:** `TIGER-Lab/MMLU-Pro`
@@ -116,7 +130,7 @@ A harder successor to MMLU with 10 answer choices instead of 4, covering 14 acad
 <details>
 <summary><b>IFEval</b> — Tests whether models follow specific formatting and content instructions (word c…</summary>
 
-Tests whether models follow specific formatting and content instructions (word counts, paragraph structure, keyword inclusion/exclusion, JSON output, language constraints, etc.). Each prompt has one or more verifiable constraints checked by 25 deterministic programmatic verifiers — no LLM-as-judge needed. A response passes only if ALL constraints are satisfied.
+Tests whether models follow specific formatting and content instructions (word counts, paragraph structure, keyword inclusion/exclusion, JSON output, language constraints, etc.). Each prompt has one or more verifiable constraints checked by 25 deterministic programmatic verifiers.
 
 - **Paper:** Zhou et al. 2023
 - **Dataset:** `google/IFEval`
@@ -130,13 +144,13 @@ Tests whether models follow specific formatting and content instructions (word c
 
 | Rank | Model | Overall | 💻 Coding | 🔬 Science | 📐 Math | 📚 Knowledge | 📋 Instruction |
 |:----:|-------|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|
-| 🥇 | **deepseek/deepseek-v4-flash** | **79.5%** | N/A | 74.0% | 92.0% | 72.0% | 80.0% |
+| 🥇 | **deepseek/deepseek-v4-flash** | **68.0%** | N/A | 52.0% | N/A | 72.0% | 80.0% |
 
 ### Per-Benchmark Scores
 
-| Model | HumanEval+ | MBPP+ | BigCodeBench | GPQA Diamond | ARC-Challenge | GSM8K | MMLU-Pro | IFEval |
-|-------|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|
-| deepseek/deepseek-v4-flash | N/A | N/A | N/A | 52% (26/50) | 96% (48/50) | 92% (46/50) | 72% (36/50) | 80% (40/50) |
+| Model | BigCodeBench-Hard | HumanEval+ | MBPP+ | GPQA Diamond | SciBench | AIME 2024/2025 | MATH-500 | MMLU-Pro | IFEval |
+|-------|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|
+| deepseek/deepseek-v4-flash | N/A | N/A | N/A | 52% (26/50) | N/A | N/A | N/A | 72% (36/50) | 80% (40/50) |
 
 ## 📊 Charts
 
@@ -174,7 +188,7 @@ Tests whether models follow specific formatting and content instructions (word c
 
 | Model | Input | Output | Thinking | Total | Out % | Think % | Avg TPS | Avg Time |
 |-------|------:|-------:|---------:|------:|------:|--------:|--------:|---------:|
-| deepseek/deepseek-v4-flash | 36,261 | 23,380 | 238,977 | 298,618 | 8% | 80% | 80.9 | 11.5s |
+| deepseek/deepseek-v4-flash | 28,051 | 19,139 | 209,255 | 256,445 | 7% | 82% | 84.3 | 16.6s |
 
 *TPS = output tokens/second (cloud APIs only, skipped for local models). Thinking tokens are reasoning/chain-of-thought tokens (e.g. DeepSeek R1).*
 
@@ -188,16 +202,16 @@ Tests whether models follow specific formatting and content instructions (word c
 
 ### Scoring
 - **All scoring is programmatic** — no LLM-as-judge is used anywhere
-- Code benchmarks are skipped unless `--allow-unsafe-code-execution` is passed in an isolated sandbox
+- Code benchmarks are skipped unless `--unsafe` is passed in an isolated sandbox
 - Multiple-choice benchmarks extract the answer letter and compare to ground truth
 - GSM8K extracts the final number (after `####`) and compares numerically
 - IFEval uses its 25 strict programmatic verifiers (word count, format, keywords, etc.)
 
 ### Category & Overall Scores
 - **Category score** = average of its benchmark scores
-  - 💻 **Coding** = avg(HumanEval+, MBPP+, BigCodeBench)
-  - 🔬 **Science** = avg(GPQA Diamond, ARC-Challenge)
-  - 📐 **Math** = avg(GSM8K)
+  - 💻 **Coding** = avg(BigCodeBench-Hard, HumanEval+, MBPP+)
+  - 🔬 **Science** = avg(GPQA Diamond, SciBench)
+  - 📐 **Math** = avg(AIME 2024/2025, MATH-500)
   - 📚 **Knowledge** = avg(MMLU-Pro)
   - 📋 **Instruction** = avg(IFEval)
 - **Overall score** = average of completed category scores (equal weight per category)
@@ -240,7 +254,7 @@ Set environment variables for the providers you want to test.
 py run_benchmark.py
 
 # Run code benchmarks only in an isolated sandbox; this executes model-generated Python
-py run_benchmark.py --allow-unsafe-code-execution --benchmarks humaneval mbpp bigcodebench
+py run_benchmark.py --unsafe --benchmarks humaneval mbpp bigcodebench
 
 # Run specific benchmarks only
 py run_benchmark.py --benchmarks humaneval mbpp gsm8k
@@ -304,4 +318,4 @@ The `name` is the display name shown in the leaderboard.
 
 ---
 
-*Auto-generated by [lite-benchmarks](.) on 2026-07-23 15:30 UTC. Run `py run_benchmark.py` to update.*
+*Auto-generated by [lite-benchmarks](.) on 2026-07-23 15:47 UTC. Run `py run_benchmark.py` to update.*

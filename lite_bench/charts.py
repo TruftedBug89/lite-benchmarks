@@ -89,6 +89,7 @@ def generate_all(results: dict, config: Config, charts_dir: str) -> list[str]:
             "output": sum(mdata.get(b, {}).get("output_tokens", 0) for b in bench_names),
         }
     paths.append(_token_breakdown(ranked, token_data, out))
+    paths.append(_thinking_vs_score(ranked, token_data, overall, out))
 
     return paths
 
@@ -228,6 +229,32 @@ def _token_breakdown(ranked, token_data, out: Path) -> str:
     _style(ax)
     fig.tight_layout()
     path = out / "tokens.png"
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    return f"charts/{path.name}"
+
+
+def _thinking_vs_score(ranked, token_data, overall, out: Path) -> str:
+    fig, ax = plt.subplots(figsize=(8, 6))
+    
+    x = [token_data[m]["thinking"] for m in ranked]
+    y = [overall[m] * 100 for m in ranked]
+    
+    if sum(x) == 0:
+        ax.text(0.5, 0.5, "No thinking tokens recorded", ha="center", va="center")
+    else:
+        for i, mname in enumerate(ranked):
+            if x[i] > 0 or y[i] > 0:
+                ax.scatter(x[i], y[i], label=mname, color=COLORS[i % len(COLORS)], s=100, alpha=0.7)
+                ax.text(x[i], y[i], f" {mname}", fontsize=8, va="center")
+        
+    ax.set_xlabel("Total Thinking Tokens")
+    ax.set_ylabel("Overall Score (%)")
+    ax.set_title("Thinking Effort vs Performance", fontweight="bold")
+    
+    _style(ax)
+    fig.tight_layout()
+    path = out / "thinking_scatter.png"
     fig.savefig(path, dpi=150)
     plt.close(fig)
     return f"charts/{path.name}"
