@@ -25,23 +25,33 @@ def _count_words(value: str) -> int:
 
 
 def _matches_relation(count: int, relation: object, target: object) -> bool:
-    if not isinstance(target, int):
+    if not isinstance(target, (int, float)):
         return False
-    if relation == "less than":
+    rel = str(relation).strip().lower() if relation is not None else ""
+    if rel in ("less than", "<"):
         return count < target
-    if relation == "at least":
+    if rel in ("at least", "greater than or equal to", ">="):
         return count >= target
+    if rel in ("at most", "less than or equal to", "<="):
+        return count <= target
+    if rel in ("more than", "greater than", ">"):
+        return count > target
+    if rel in ("equal to", "exactly", "===", "=="):
+        return count == target
     return False
 
 
 def _paragraphs(value: str) -> list[str] | None:
-    paragraphs = re.split(r"\s?\*\*\*\s?", value)
-    for index, paragraph in enumerate(paragraphs):
+    if "***" in value:
+        raw_paragraphs = re.split(r"\s?\*\*\*\s?", value)
+    else:
+        raw_paragraphs = re.split(r"\n\s*\n", value)
+    for index, paragraph in enumerate(raw_paragraphs):
         if not paragraph.strip():
-            if index in (0, len(paragraphs) - 1):
+            if index in (0, len(raw_paragraphs) - 1):
                 continue
             return None
-    return [paragraph for paragraph in paragraphs if paragraph.strip()]
+    return [paragraph for paragraph in raw_paragraphs if paragraph.strip()]
 
 
 def verify_number_words(response: str, **kwargs: Any) -> bool:
@@ -95,9 +105,8 @@ def verify_number_bullet_lists(response: str, **kwargs: Any) -> bool:
     expected = kwargs.get("num_bullets")
     if not isinstance(expected, int):
         return False
-    stars = re.findall(r"^\s*\*[^\*].*$", response, flags=re.MULTILINE)
-    dashes = re.findall(r"^\s*-.*$", response, flags=re.MULTILINE)
-    return len(stars) + len(dashes) == expected
+    bullets = re.findall(r"^\s*(?:[*+-]|\d+[\.\)])\s+.*$", response, flags=re.MULTILINE)
+    return len(bullets) == expected
 
 
 def verify_constrained_response(response: str, **kwargs: Any) -> bool:
@@ -113,18 +122,17 @@ def verify_number_highlighted_sections(response: str, **kwargs: Any) -> bool:
     expected = kwargs.get("num_highlights")
     if not isinstance(expected, int):
         return False
-    highlights = re.findall(r"\*[^\n\*]*\*", response)
-    double_highlights = re.findall(r"\*\*[^\n\*]*\*\*", response)
-    count = sum(bool(highlight.strip("*").strip()) for highlight in highlights)
-    count += sum(
-        bool(highlight.removeprefix("**").removesuffix("**").strip())
-        for highlight in double_highlights
-    )
-    return count >= expected
+    # Find double-asterisk highlights first, then single-asterisk highlights that aren't part of doubles
+    double_matches = re.findall(r"\*\*([^\n\*]+)\*\*", response)
+    # Remove double-asterisk matches to avoid double-counting in single-asterisk regex
+    clean_text = re.sub(r"\*\*[^\n\*]+\*\*", "", response)
+    single_matches = re.findall(r"\*([^\n\*]+)\*", clean_text)
+    total = len([m for m in double_matches if m.strip()]) + len([m for m in single_matches if m.strip()])
+    return total >= expected
 
 
 def verify_multiple_sections(response: str, **kwargs: Any) -> bool:
-    splitter = kwargs.get("section_spliter")
+    splitter = kwargs.get("section_spliter") or kwargs.get("section_splitter")
     expected = kwargs.get("num_sections")
     if not isinstance(splitter, str) or not isinstance(expected, int):
         return False
@@ -133,8 +141,12 @@ def verify_multiple_sections(response: str, **kwargs: Any) -> bool:
 
 
 def verify_json_format(response: str, **kwargs: Any) -> bool:
+    text = response.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*\n?", "", text)
+        text = re.sub(r"\n?```\s*$", "", text).strip()
     try:
-        json.loads(response)
+        json.loads(text)
     except (json.JSONDecodeError, TypeError):
         return False
     return True
@@ -147,7 +159,7 @@ def verify_title(response: str, **kwargs: Any) -> bool:
 def verify_keywords_existence(response: str, **kwargs: Any) -> bool:
     keywords = kwargs.get("keywords")
     return isinstance(keywords, Sequence) and all(
-        isinstance(keyword, str) and re.search(keyword, response, flags=re.IGNORECASE)
+        isinstance(keyword, str) and re.search(re.escape(keyword), response, flags=re.IGNORECASE)
         for keyword in keywords
     )
 
@@ -157,15 +169,25 @@ def verify_keyword_frequency(response: str, **kwargs: Any) -> bool:
     frequency = kwargs.get("frequency")
     if not isinstance(keyword, str) or not isinstance(frequency, int):
         return False
-    return len(re.findall(keyword, response, flags=re.IGNORECASE)) == frequency
+    return len(re.findall(re.escape(keyword), response, flags=re.IGNORECASE)) == frequency
 
 
 def verify_forbidden_words(response: str, **kwargs: Any) -> bool:
     forbidden_words = kwargs.get("forbidden_words")
-    return isinstance(forbidden_words, Sequence) and all(
-        isinstance(word, str) and not re.search(word, response, flags=re.IGNORECASE)
-        for word in forbidden_words
-    )
+    if not isinstance(forbidden_words, Sequence):
+        return False
+    for word in forbidden_words:
+        if isinstance(word, str) and word.strip():
+            w = word.strip()
+            pattern = ""
+            if w[0].isalnum() or w[0] == "_":
+                pattern += r"\b"
+            pattern += re.escape(w)
+            if w[-1].isalnum() or w[-1] == "_":
+                pattern += r"\b"
+            if re.search(pattern, response, flags=re.IGNORECASE):
+                return False
+    return True
 
 
 def verify_letter_frequency(response: str, **kwargs: Any) -> bool:

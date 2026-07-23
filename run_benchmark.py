@@ -179,7 +179,7 @@ def run_benchmarks(
                             if result.tokens_per_second is not None:
                                 detail["tokens_per_second"] = round(result.tokens_per_second, 2)
                             question_details.append(detail)
-                            correct += int(score)
+                            correct += float(score)
                         else:
                             failed += 1
                             question_details.append(
@@ -209,18 +209,9 @@ def run_benchmarks(
                 [detail for detail in question_details if detail["status"] == "scored"]
             )
 
-            new_score = score_pct
-            old_bdata = results[model.name].get(bname)
-            if old_bdata and isinstance(old_bdata, dict) and "score" in old_bdata:
-                if old_bdata["score"] >= new_score:
-                    console.print(f"  [dim]Keeping previous best score for {bench.display_name}: {old_bdata['score']:.0%} (New: {new_score:.0%})[/dim]")
-                    continue
-                else:
-                    console.print(f"  [dim]New best score for {bench.display_name}! {new_score:.0%} > {old_bdata['score']:.0%}[/dim]")
-
             results[model.name][bname] = {
-                "score": new_score,
-                "correct": correct,
+                "score": score_pct,
+                "correct": round(correct, 4),
                 "total": scored,
                 "requested": requested,
                 "failed": failed,
@@ -229,7 +220,7 @@ def run_benchmarks(
             }
             console.print(
                 f"  [green]{bench.display_name}:[/green] "
-                f"{correct}/{scored} ({new_score:.0%})"
+                f"{round(correct, 2)}/{scored} ({score_pct:.0%})"
                 + (f" [dim]{failed} errors excluded[/dim]" if failed else "")
             )
 

@@ -33,6 +33,11 @@ console = Console()
 
 def _strip_code_blocks(text: str) -> str:
     text = text.strip()
+    # First search for explicit markdown python/py code blocks
+    matches = re.findall(r"```(?:python|py)?\s*\n(.*?)\n```", text, re.DOTALL)
+    if matches:
+        return matches[-1].strip()
+    # Fallback for code blocks missing closing tags or simple triple backticks
     if text.startswith("```"):
         text = re.sub(r"^```(?:python|py)?\s*\n?", "", text)
         text = re.sub(r"\n?```\s*$", "", text)
@@ -43,29 +48,59 @@ def _extract_number(text: str) -> str | None:
     m = re.search(r"####\s*(-?[\d,]+(?:\.\d+)?)", text)
     if m:
         return m.group(1).replace(",", "").strip()
-    nums = re.findall(r"-?[\d,]+(?:\.\d+)?", text)
-    return nums[-1].replace(",", "").strip() if nums else None
+    
+    boxed = _extract_boxed(text)
+    if boxed:
+        m_boxed = re.search(r"^-?[\d,]+(?:\.\d+)?$", boxed.replace(",", "").strip())
+        if m_boxed:
+            return m_boxed.group(0)
+
+    # Avoid extracting isolated digits from LaTeX fractions like \frac{3}{5}, \dfrac{3}{5}, \tfrac{3}{5}
+    cleaned = re.sub(r"\\(?:d|t)?frac\{[^{}]+\}\{[^{}]+\}", "", text)
+    nums = re.findall(r"(?<![\d\w.-])-?[\d,]+(?:\.\d+)?(?![\d\w.-])", cleaned)
+    if nums:
+        return nums[-1].replace(",", "").strip()
+    return None
 
 
 def _extract_letter(response: str, valid: set[str] | None = None) -> str | None:
     if valid is None:
         valid = {"A", "B", "C", "D"}
-    m = re.search(r"(?:answer|Answer)\s*(?:is|:)?\s*\(?([A-Ja-j])\)?", response)
-    if m and m.group(1).upper() in valid:
-        return m.group(1).upper()
-    m = re.search(r"\b([A-Ja-j])\b", response.strip())
-    if m and m.group(1).upper() in valid:
-        return m.group(1).upper()
+    valid_upper = {v.upper() for v in valid}
+
+    # Check boxed content first
+    boxed = _extract_boxed(response)
+    if boxed and boxed.strip().upper() in valid_upper:
+        return boxed.strip().upper()
+
+    # Search for explicit "Answer is X" from the end of the text
+    matches = list(re.finditer(r"(?:answer|choice|option)\s*(?:is|:)?\s*\(?([A-Ja-j])\)?", response, flags=re.IGNORECASE))
+    if matches:
+        last_match = matches[-1].group(1).upper()
+        if last_match in valid_upper:
+            return last_match
+
+    # Search for standalone letter in the last paragraph or line
+    paragraphs = [p for p in response.strip().split("\n") if p.strip()]
+    if paragraphs:
+        last_para = paragraphs[-1]
+        letter_matches = re.findall(r"\b([A-Ja-j])\b", last_para)
+        if letter_matches and letter_matches[-1].upper() in valid_upper:
+            return letter_matches[-1].upper()
+
+    # Fallback to general scan in reverse
+    letter_matches = re.findall(r"\b([A-Ja-j])\b", response)
+    for l in reversed(letter_matches):
+        if l.upper() in valid_upper:
+            return l.upper()
+
     stripped = response.strip()
-    if stripped and stripped[0].upper() in valid:
+    if stripped and stripped[0].upper() in valid_upper:
         return stripped[0].upper()
     return None
 
 
 def _extract_boxed(text: str) -> str | None:
-    m = re.findall(r"\\boxed\{([^{}]+)\}", text)
-    if m:
-        return m[-1].strip()
     idx = text.rfind(r"\boxed{")
     if idx != -1:
         substr = text[idx + 7 :]
@@ -79,10 +114,13 @@ def _extract_boxed(text: str) -> str | None:
                 if open_braces == 0:
                     break
             chars.append(c)
-        if chars:
+        if chars and open_braces == 0:
             return "".join(chars).strip()
-    return None
 
+    m = re.findall(r"\\boxed\{([^{}]+)\}", text)
+    if m:
+        return m[-1].strip()
+    return None
 
 
 def _execute_code(code: str, timeout: int) -> bool:
@@ -231,7 +269,27 @@ class GPQABenchmark(BenchmarkBase):
     display_name = "GPQA Diamond"
 
     def format_prompt(self, q: dict) -> str:
-        question = q.get("question", "")
+        question = q.get("question") or q.get("Question", "")
+        options = q.get("options") or q.get("choices")
+        if not options and "Correct Answer" in q:
+            correct = q["Correct Answer"]
+            inc1 = q.get("Incorrect Answer 1", "")
+            inc2 = q.get("Incorrect Answer 2", "")
+            inc3 = q.get("Incorrect Answer 3", "")
+            raw_choices = [correct, inc1, inc2, inc3]
+            h = sum(ord(c) for c in str(question))
+            indices = list(range(4))
+            indices.sort(key=lambda i: (h * (i + 1) * 31) % 1009)
+            options = [raw_choices[i] for i in indices]
+
+        if options and isinstance(options, list):
+            opts_str = "\n".join(f"{chr(65 + i)}. {o}" for i, o in enumerate(options))
+            return (
+                "Answer the following graduate-level science question.\n\n"
+                f"{question}\n\n{opts_str}\n\n"
+                "Reply with ONLY the letter (A, B, C, or D) of the correct answer."
+            )
+
         return (
             "Answer the following graduate-level science question.\n\n"
             f"{question}\n\n"
@@ -239,11 +297,35 @@ class GPQABenchmark(BenchmarkBase):
         )
 
     def evaluate(self, q: dict, response: str) -> float:
-        solution = q.get("solution", "")
-        m = re.search(r"[Aa]nswer:\s*([A-Da-d])", solution)
-        if not m:
+        gold = None
+        if "Correct Answer" in q:
+            correct = q["Correct Answer"]
+            question = q.get("question") or q.get("Question", "")
+            inc1 = q.get("Incorrect Answer 1", "")
+            inc2 = q.get("Incorrect Answer 2", "")
+            inc3 = q.get("Incorrect Answer 3", "")
+            raw_choices = [correct, inc1, inc2, inc3]
+            h = sum(ord(c) for c in str(question))
+            indices = list(range(4))
+            indices.sort(key=lambda i: (h * (i + 1) * 31) % 1009)
+            options = [raw_choices[i] for i in indices]
+            try:
+                gold_idx = options.index(correct)
+                gold = chr(65 + gold_idx)
+            except ValueError:
+                pass
+
+        if not gold:
+            solution = str(q.get("solution") or q.get("answer") or "")
+            m = re.search(r"[Aa]nswer:\s*([A-Da-d])", solution)
+            if m:
+                gold = m.group(1).upper()
+            elif solution.strip().upper() in {"A", "B", "C", "D"}:
+                gold = solution.strip().upper()
+
+        if not gold:
             return 0.0
-        gold = m.group(1).upper()
+
         pred = _extract_letter(response, {"A", "B", "C", "D"})
         return 1.0 if pred == gold else 0.0
 
@@ -301,7 +383,7 @@ class GSM8KBenchmark(BenchmarkBase):
         if gold is None or pred is None:
             return 0.0
         try:
-            return 1.0 if float(gold) == float(pred) else 0.0
+            return 1.0 if abs(float(gold) - float(pred)) < 1e-6 else 0.0
         except ValueError:
             return 0.0
 
@@ -328,8 +410,20 @@ class MMLUProBenchmark(BenchmarkBase):
         )
 
     def evaluate(self, q: dict, response: str) -> float:
-        gold = q["answer"].strip().upper()
-        n = len(q["options"])
+        ans_raw = q.get("answer")
+        if ans_raw is None:
+            ans_raw = q.get("answer_index")
+        
+        if isinstance(ans_raw, int):
+            gold = chr(65 + ans_raw)
+        else:
+            gold_str = str(ans_raw).strip()
+            if gold_str.isdigit():
+                gold = chr(65 + int(gold_str))
+            else:
+                gold = gold_str.upper()
+
+        n = len(q.get("options", [])) or 10
         valid = {chr(65 + i) for i in range(n)}
         pred = _extract_letter(response, valid)
         return 1.0 if pred == gold else 0.0
@@ -405,13 +499,23 @@ class SciBenchBenchmark(BenchmarkBase):
         )
 
     def evaluate(self, q: dict, response: str) -> float:
-        gold = q.get("answer_number") or q.get("answer_latex") or q.get("solution", "")
-        pred = _extract_boxed(response) or _extract_number(response)
-        if pred is None or not str(gold).strip():
+        gold_val = q.get("answer_number")
+        if gold_val is None:
+            gold_val = q.get("answer_latex")
+        if gold_val is None:
+            gold_val = q.get("solution", "")
+        
+        if gold_val is None or not str(gold_val).strip():
             return 0.0
-        gold_str = str(gold).strip()
-        if pred.strip() == gold_str:
+        
+        gold_str = str(gold_val).strip()
+        pred = _extract_boxed(response) or _extract_number(response)
+        if pred is None:
+            return 0.0
+        
+        if pred.strip().lower() == gold_str.lower():
             return 1.0
+        
         try:
             return 1.0 if abs(float(pred) - float(gold_str)) < 1e-4 else 0.0
         except ValueError:
@@ -436,14 +540,20 @@ class AIMEBenchmark(BenchmarkBase):
         )
 
     def evaluate(self, q: dict, response: str) -> float:
-        gold = q.get("answer") or q.get("solution", "")
-        gold_num = _extract_number(str(gold))
+        gold_raw = q.get("answer")
+        if gold_raw is None:
+            gold_raw = q.get("solution", "")
+        
+        gold_str = str(gold_raw).strip()
+        gold_num = _extract_boxed(gold_str) or _extract_number(gold_str)
         if gold_num is None:
             return 0.0
+
         pred_boxed = _extract_boxed(response)
         pred_num = _extract_number(pred_boxed) if pred_boxed else _extract_number(response)
         if pred_num is None:
             return 0.0
+
         try:
             return 1.0 if float(gold_num) == float(pred_num) else 0.0
         except ValueError:
@@ -453,6 +563,15 @@ class AIMEBenchmark(BenchmarkBase):
 # ---------------------------------------------------------------------------
 # MATH-500 — Competition math problems (Hendrycks MATH level 1-5)
 # ---------------------------------------------------------------------------
+
+
+def _normalize_latex(s: str) -> str:
+    s = s.strip()
+    s = re.sub(r"\s+", "", s)
+    s = s.replace(r"\dfrac", r"\frac")
+    s = s.replace(r"\left", "").replace(r"\right", "")
+    s = s.replace(r"\mathrm", "").replace(r"\mathbf", "").replace(r"\text", "")
+    return s
 
 
 class MATH500Benchmark(BenchmarkBase):
@@ -468,19 +587,36 @@ class MATH500Benchmark(BenchmarkBase):
         )
 
     def evaluate(self, q: dict, response: str) -> float:
-        gold = q.get("answer") or q.get("solution", "")
-        gold_boxed = _extract_boxed(str(gold)) or str(gold).strip()
+        gold_raw = q.get("answer")
+        if gold_raw is None:
+            gold_raw = q.get("solution", "")
+        gold_str = str(gold_raw).strip()
+        gold_boxed = _extract_boxed(gold_str) or gold_str
+
         pred_boxed = _extract_boxed(response)
-        if pred_boxed and pred_boxed.strip() == gold_boxed:
+        if pred_boxed and _normalize_latex(pred_boxed) == _normalize_latex(gold_boxed):
             return 1.0
-        gold_num = _extract_number(str(gold))
+
+        # Only do numerical float comparison if both are simple standalone numbers
+        m_gold = re.match(r"^-?[\d,]+(?:\.\d+)?$", gold_boxed.replace(",", "").strip())
+        if pred_boxed:
+            m_pred = re.match(r"^-?[\d,]+(?:\.\d+)?$", pred_boxed.replace(",", "").strip())
+            if m_gold and m_pred:
+                try:
+                    return 1.0 if abs(float(m_gold.group(0)) - float(m_pred.group(0))) < 1e-6 else 0.0
+                except ValueError:
+                    pass
+
+        gold_num = _extract_number(gold_str)
         pred_num = _extract_number(response)
         if gold_num is not None and pred_num is not None:
-            try:
-                if float(gold_num) == float(pred_num):
-                    return 1.0
-            except ValueError:
-                pass
+            m_g = re.match(r"^-?[\d.]+$", gold_num)
+            m_p = re.match(r"^-?[\d.]+$", pred_num)
+            if m_g and m_p and r"\frac" not in gold_str:
+                try:
+                    return 1.0 if abs(float(gold_num) - float(pred_num)) < 1e-6 else 0.0
+                except ValueError:
+                    pass
         return 0.0
 
 
@@ -519,12 +655,12 @@ class HLEBenchmark(BenchmarkBase):
         pred_num = _extract_number(pred_boxed) if pred_boxed else _extract_number(response)
         if gold_num is not None and pred_num is not None:
             try:
-                if float(gold_num) == float(pred_num):
+                if abs(float(gold_num) - float(pred_num)) < 1e-4:
                     return 1.0
             except ValueError:
                 pass
 
-        if gold.lower() in response.lower():
+        if len(gold) >= 4 and re.search(r"\b" + re.escape(gold) + r"\b", response, flags=re.IGNORECASE):
             return 1.0
 
         return 0.0
@@ -612,7 +748,7 @@ class TauBenchBenchmark(BenchmarkBase):
         gold_func = gold_tool_calls[0].get("function", {})
         gold_name = str(gold_func.get("name", ""))
 
-        if gold_name and gold_name.lower() in response.lower():
+        if gold_name and re.search(r"\b" + re.escape(gold_name) + r"\b", response, flags=re.IGNORECASE):
             return 1.0
 
         return 0.0
