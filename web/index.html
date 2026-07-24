@@ -23,17 +23,11 @@
       --text-muted: #94a3b8;
       --text-dim: #64748b;
     }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Inter', sans-serif;
       background-color: var(--bg-dark);
-      background-image: 
+      background-image:
         radial-gradient(at 15% 15%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
         radial-gradient(at 85% 20%, rgba(6, 182, 212, 0.12) 0px, transparent 50%),
         radial-gradient(at 50% 80%, rgba(16, 185, 129, 0.1) 0px, transparent 50%);
@@ -41,752 +35,307 @@
       min-height: 100vh;
       overflow-x: hidden;
     }
-
-    /* Layout */
-    .app-container {
-      display: grid;
-      grid-template-columns: 360px 1fr;
-      min-height: 100vh;
-    }
-
-    /* Sidebar / Control Panel */
+    .app-container { display: grid; grid-template-columns: 380px 1fr; min-height: 100vh; }
     .sidebar {
       background: rgba(15, 23, 42, 0.8);
       backdrop-filter: blur(16px);
       border-right: 1px solid var(--border-color);
       padding: 1.5rem;
-      display: flex;
-      flex-direction: column;
-      gap: 1.5rem;
-      overflow-y: auto;
-      max-height: 100vh;
+      display: flex; flex-direction: column; gap: 1.25rem;
+      overflow-y: auto; max-height: 100vh;
     }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-    }
-
+    .brand { display: flex; align-items: center; gap: 0.75rem; }
     .brand-icon {
-      width: 42px;
-      height: 42px;
+      width: 42px; height: 42px;
       background: linear-gradient(135deg, var(--accent-primary), var(--accent-cyan));
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.4rem;
-      box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
+      border-radius: 12px; display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem; box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
     }
-
     .brand-title {
-      font-family: 'Outfit', sans-serif;
-      font-size: 1.35rem;
-      font-weight: 800;
+      font-family: 'Outfit', sans-serif; font-size: 1.35rem; font-weight: 800;
       background: linear-gradient(90deg, #ffffff, #cbd5e1);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     }
-
     .section-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      border-radius: 14px;
-      padding: 1.1rem;
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
+      background: var(--bg-card); border: 1px solid var(--border-color);
+      border-radius: 14px; padding: 1.1rem;
+      display: flex; flex-direction: column; gap: 0.85rem;
     }
-
     .section-title {
-      font-family: 'Outfit', sans-serif;
-      font-size: 0.95rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--text-muted);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+      font-family: 'Outfit', sans-serif; font-size: 0.9rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);
+      display: flex; align-items: center; justify-content: space-between;
     }
-
-    .form-group {
-      display: flex;
-      flex-direction: column;
-      gap: 0.4rem;
-    }
-
-    .form-label {
-      font-size: 0.82rem;
-      font-weight: 500;
-      color: var(--text-muted);
-    }
-
+    .form-group { display: flex; flex-direction: column; gap: 0.35rem; }
+    .form-label { font-size: 0.8rem; font-weight: 500; color: var(--text-muted); }
     .form-input, .form-select {
-      background: rgba(15, 23, 42, 0.9);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      padding: 0.55rem 0.75rem;
-      color: var(--text-main);
-      font-family: inherit;
-      font-size: 0.88rem;
-      outline: none;
-      transition: all 0.2s;
+      background: rgba(15, 23, 42, 0.9); border: 1px solid var(--border-color);
+      border-radius: 8px; padding: 0.5rem 0.7rem; color: var(--text-main);
+      font-family: inherit; font-size: 0.85rem; outline: none; transition: all 0.2s;
     }
-
     .form-input:focus, .form-select:focus {
-      border-color: var(--accent-primary);
-      box-shadow: 0 0 10px rgba(99, 102, 241, 0.3);
+      border-color: var(--accent-primary); box-shadow: 0 0 10px rgba(99, 102, 241, 0.3);
     }
-
-    .checkbox-grid {
-      display: flex;
-      flex-direction: column;
-      gap: 0.5rem;
-      max-height: 180px;
-      overflow-y: auto;
-      padding-right: 0.25rem;
-    }
-
-    .checkbox-item {
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-      font-size: 0.85rem;
-      cursor: pointer;
-      padding: 0.35rem 0.5rem;
-      border-radius: 6px;
-      transition: background 0.15s;
-    }
-
-    .checkbox-item:hover {
-      background: rgba(255, 255, 255, 0.04);
-    }
-
-    .checkbox-item input[type="checkbox"] {
-      accent-color: var(--accent-primary);
-      width: 16px;
-      height: 16px;
-      cursor: pointer;
-    }
-
     .btn {
-      padding: 0.75rem 1.25rem;
-      border-radius: 10px;
-      font-family: 'Outfit', sans-serif;
-      font-weight: 700;
-      font-size: 0.95rem;
-      border: none;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
-      transition: all 0.2s ease-out;
+      padding: 0.65rem 1.1rem; border-radius: 10px;
+      font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 0.9rem;
+      border: none; cursor: pointer; display: flex; align-items: center;
+      justify-content: center; gap: 0.5rem; transition: all 0.2s ease-out;
     }
-
     .btn-primary {
       background: linear-gradient(135deg, var(--accent-primary), var(--accent-cyan));
-      color: white;
-      box-shadow: 0 4px 20px rgba(99, 102, 241, 0.35);
+      color: white; box-shadow: 0 4px 20px rgba(99, 102, 241, 0.35);
     }
-
-    .btn-primary:hover:not(:disabled) {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 25px rgba(99, 102, 241, 0.5);
+    .btn-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 25px rgba(99, 102, 241, 0.5); }
+    .btn-danger { background: linear-gradient(135deg, var(--accent-rose), #e11d48); color: white; }
+    .btn-secondary { background: rgba(255,255,255,0.06); color: var(--text-main); border: 1px solid var(--border-color); }
+    .btn-secondary:hover { background: rgba(255,255,255,0.12); }
+    .btn-sm { padding: 0.3rem 0.6rem; font-size: 0.75rem; border-radius: 7px; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .fleet-list { display: flex; flex-direction: column; gap: 0.5rem; max-height: 220px; overflow-y: auto; }
+    .fleet-item {
+      display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.65rem;
+      background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-color);
+      border-radius: 10px; font-size: 0.83rem; transition: border-color 0.2s;
     }
-
-    .btn-primary:active:not(:disabled) {
-      transform: translateY(0);
+    .fleet-item:hover { border-color: var(--border-glow); }
+    .fleet-item .fi-name { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fleet-item .fi-id { font-size: 0.72rem; color: var(--text-dim); font-family: 'JetBrains Mono', monospace; }
+    .fleet-item select { background: rgba(9,13,22,0.9); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 0.72rem; padding: 0.2rem 0.3rem; }
+    .fleet-item .fi-remove { cursor: pointer; color: var(--accent-rose); font-weight: 700; font-size: 1rem; line-height: 1; opacity: 0.6; transition: opacity 0.15s; }
+    .fleet-item .fi-remove:hover { opacity: 1; }
+    .saved-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      padding: 0.3rem 0.6rem; border-radius: 20px; font-size: 0.75rem; font-weight: 500;
+      background: rgba(99, 102, 241, 0.12); border: 1px solid rgba(99, 102, 241, 0.25);
+      color: var(--accent-primary); cursor: pointer; transition: all 0.15s;
     }
-
-    .btn-danger {
-      background: linear-gradient(135deg, var(--accent-rose), #e11d48);
-      color: white;
-      box-shadow: 0 4px 15px rgba(244, 63, 94, 0.3);
+    .chip:hover { background: rgba(99, 102, 241, 0.25); transform: translateY(-1px); }
+    .chip .chip-x { font-size: 0.85rem; opacity: 0.5; }
+    .chip .chip-x:hover { opacity: 1; color: var(--accent-rose); }
+    .checkbox-grid { display: flex; flex-direction: column; gap: 0.4rem; max-height: 180px; overflow-y: auto; padding-right: 0.25rem; }
+    .checkbox-item {
+      display: flex; align-items: center; gap: 0.6rem; font-size: 0.83rem;
+      cursor: pointer; padding: 0.3rem 0.5rem; border-radius: 6px; transition: background 0.15s;
     }
-
-    .btn-secondary {
-      background: rgba(255, 255, 255, 0.06);
-      color: var(--text-main);
-      border: 1px solid var(--border-color);
-    }
-
-    .btn-secondary:hover {
-      background: rgba(255, 255, 255, 0.12);
-    }
-
-    .btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    /* Main Area */
-    .main-content {
-      padding: 1.75rem 2rem;
-      display: flex;
-      flex-direction: column;
-      gap: 1.75rem;
-      overflow-y: auto;
-      max-height: 100vh;
-    }
-
-    /* Top Stats Header Bar */
+    .checkbox-item:hover { background: rgba(255,255,255,0.04); }
+    .checkbox-item input[type="checkbox"] { accent-color: var(--accent-primary); width: 15px; height: 15px; cursor: pointer; }
+    .main-content { padding: 1.5rem 2rem; display: flex; flex-direction: column; gap: 1.5rem; overflow-y: auto; max-height: 100vh; }
     .top-bar {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      border-radius: 16px;
-      padding: 1rem 1.5rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      backdrop-filter: blur(12px);
-      gap: 1.5rem;
+      background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 16px;
+      padding: 1rem 1.5rem; display: flex; align-items: center; justify-content: space-between;
+      backdrop-filter: blur(12px); gap: 1.5rem;
     }
-
-    .stat-group {
-      display: flex;
-      align-items: center;
-      gap: 2rem;
-    }
-
-    .stat-box {
-      display: flex;
-      flex-direction: column;
-      gap: 0.2rem;
-    }
-
-    .stat-value {
-      font-family: 'Outfit', sans-serif;
-      font-size: 1.4rem;
-      font-weight: 800;
-    }
-
-    .stat-label {
-      font-size: 0.78rem;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .throughput-chart-container {
-      flex: 1;
-      height: 38px;
-      position: relative;
-    }
-
-    .throughput-chart-container canvas {
-      width: 100%;
-      height: 100%;
-      display: block;
-    }
-
-    /* Models Cards Grid */
-    .grid-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .grid-title {
-      font-family: 'Outfit', sans-serif;
-      font-size: 1.25rem;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
-    .models-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
-      gap: 1.25rem;
-    }
-
+    .stat-group { display: flex; align-items: center; gap: 2rem; }
+    .stat-box { display: flex; flex-direction: column; gap: 0.15rem; }
+    .stat-value { font-family: 'Outfit', sans-serif; font-size: 1.35rem; font-weight: 800; }
+    .stat-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .throughput-chart-container { flex: 1; height: 38px; position: relative; }
+    .throughput-chart-container canvas { width: 100%; height: 100%; display: block; }
+    .grid-header { display: flex; align-items: center; justify-content: space-between; }
+    .grid-title { font-family: 'Outfit', sans-serif; font-size: 1.2rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem; }
+    .models-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 1.25rem; }
     .model-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      border-radius: 16px;
-      padding: 1.25rem;
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-      transition: border-color 0.3s ease, box-shadow 0.3s ease;
-      position: relative;
-      overflow: hidden;
+      background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 16px;
+      padding: 1.25rem; display: flex; flex-direction: column; gap: 1rem;
+      transition: border-color 0.3s ease, box-shadow 0.3s ease; position: relative; overflow: hidden;
     }
-
     .model-card::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 3px;
-      background: var(--accent-primary);
-      opacity: 0.6;
-      transition: background 0.3s ease;
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: var(--accent-primary); opacity: 0.6; transition: background 0.3s ease;
     }
-
-    .model-card.running::before {
-      background: linear-gradient(90deg, var(--accent-cyan), var(--accent-primary));
-    }
-
-    .model-card.finished::before {
-      background: var(--accent-green);
-    }
-
-    .model-card.failed::before {
-      background: var(--accent-rose);
-    }
-
-    .model-card-header {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 1rem;
-    }
-
-    .model-name {
-      font-family: 'Outfit', sans-serif;
-      font-size: 1.1rem;
-      font-weight: 700;
-    }
-
-    .model-id {
-      font-size: 0.78rem;
-      color: var(--text-dim);
-      font-family: 'JetBrains Mono', monospace;
-    }
-
+    .model-card.running::before { background: linear-gradient(90deg, var(--accent-cyan), var(--accent-primary)); }
+    .model-card.finished::before { background: var(--accent-green); }
+    .model-card.failed::before { background: var(--accent-rose); }
+    .model-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+    .model-name { font-family: 'Outfit', sans-serif; font-size: 1.05rem; font-weight: 700; }
+    .model-id { font-size: 0.75rem; color: var(--text-dim); font-family: 'JetBrains Mono', monospace; }
     .status-badge {
-      font-size: 0.75rem;
-      font-weight: 600;
-      padding: 0.25rem 0.6rem;
-      border-radius: 20px;
-      background: rgba(255, 255, 255, 0.08);
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      white-space: nowrap;
+      font-size: 0.73rem; font-weight: 600; padding: 0.25rem 0.6rem; border-radius: 20px;
+      background: rgba(255,255,255,0.08); display: flex; align-items: center; gap: 0.4rem; white-space: nowrap;
     }
-
-    .status-badge.running {
-      background: rgba(6, 182, 212, 0.15);
-      color: var(--accent-cyan);
-      border: 1px solid rgba(6, 182, 212, 0.3);
-    }
-
-    .status-badge.finished {
-      background: rgba(16, 185, 129, 0.15);
-      color: var(--accent-green);
-      border: 1px solid rgba(16, 185, 129, 0.3);
-    }
-
-    .status-badge.failed {
-      background: rgba(244, 63, 94, 0.15);
-      color: var(--accent-rose);
-      border: 1px solid rgba(244, 63, 94, 0.3);
-    }
-
-    /* Gauge & Metrics Section */
-    .card-top-section {
-      display: flex;
-      align-items: center;
-      gap: 1.2rem;
-    }
-
-    .gauge-wrapper {
-      position: relative;
-      width: 70px;
-      height: 70px;
-      flex-shrink: 0;
-    }
-
-    .gauge-svg {
-      width: 100%;
-      height: 100%;
-      transform: rotate(-90deg);
-    }
-
-    .gauge-bg {
-      fill: none;
-      stroke: rgba(255, 255, 255, 0.08);
-      stroke-width: 6;
-    }
-
-    .gauge-fill {
-      fill: none;
-      stroke: var(--accent-green);
-      stroke-width: 6;
-      stroke-linecap: round;
-      stroke-dasharray: 201;
-      stroke-dashoffset: 201;
-      transition: stroke-dashoffset 0.4s ease-out, stroke 0.3s ease;
-    }
-
+    .status-badge.running { background: rgba(6,182,212,0.15); color: var(--accent-cyan); border: 1px solid rgba(6,182,212,0.3); }
+    .status-badge.finished { background: rgba(16,185,129,0.15); color: var(--accent-green); border: 1px solid rgba(16,185,129,0.3); }
+    .status-badge.failed { background: rgba(244,63,94,0.15); color: var(--accent-rose); border: 1px solid rgba(244,63,94,0.3); }
+    .card-top-section { display: flex; align-items: center; gap: 1.2rem; }
+    .gauge-wrapper { position: relative; width: 70px; height: 70px; flex-shrink: 0; }
+    .gauge-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+    .gauge-bg { fill: none; stroke: rgba(255,255,255,0.08); stroke-width: 6; }
+    .gauge-fill { fill: none; stroke: var(--accent-green); stroke-width: 6; stroke-linecap: round; stroke-dasharray: 201; stroke-dashoffset: 201; transition: stroke-dashoffset 0.4s ease-out, stroke 0.3s ease; }
     .gauge-text {
-      position: absolute;
-      top: 0; left: 0; width: 100%; height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: 'Outfit', sans-serif;
-      font-weight: 800;
-      font-size: 0.85rem;
-      color: var(--text-main);
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Outfit', sans-serif; font-weight: 800; font-size: 0.85rem; color: var(--text-main);
     }
-
-    /* Progress bar */
-    .progress-bar-container {
-      display: flex;
-      flex-direction: column;
-      gap: 0.35rem;
-      flex: 1;
-    }
-
-    .progress-bar-track {
-      width: 100%;
-      height: 8px;
-      background: rgba(255, 255, 255, 0.08);
-      border-radius: 4px;
-      overflow: hidden;
-    }
-
-    .progress-bar-fill {
-      height: 100%;
-      background: linear-gradient(90deg, var(--accent-primary), var(--accent-cyan));
-      border-radius: 4px;
-      transition: width 0.35s ease-out;
-    }
-
+    .progress-bar-container { display: flex; flex-direction: column; gap: 0.35rem; flex: 1; }
+    .progress-bar-track { width: 100%; height: 8px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; }
+    .progress-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent-primary), var(--accent-cyan)); border-radius: 4px; transition: width 0.35s ease-out; }
     .card-metrics {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 0.5rem;
-      background: rgba(15, 23, 42, 0.6);
-      padding: 0.6rem 0.75rem;
-      border-radius: 10px;
-      border: 1px solid rgba(255, 255, 255, 0.04);
-      align-items: center;
+      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem;
+      background: rgba(15,23,42,0.6); padding: 0.6rem 0.75rem; border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.04); align-items: center;
     }
-
-    .metric-item {
-      display: flex;
-      flex-direction: column;
-    }
-
-    .metric-val {
-      font-size: 0.95rem;
-      font-weight: 700;
-    }
-
-    .metric-lbl {
-      font-size: 0.72rem;
-      color: var(--text-dim);
-    }
-
-    .sparkline-canvas {
-      width: 100%;
-      height: 24px;
-      display: block;
-    }
-
-    /* Live Output Box */
+    .metric-item { display: flex; flex-direction: column; }
+    .metric-val { font-size: 0.92rem; font-weight: 700; }
+    .metric-lbl { font-size: 0.7rem; color: var(--text-dim); }
+    .sparkline-canvas { width: 100%; height: 24px; display: block; }
     .output-box {
-      background: rgba(9, 13, 22, 0.9);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      border-radius: 10px;
-      padding: 0.6rem 0.75rem;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.78rem;
-      color: var(--text-muted);
-      height: 52px;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
+      background: rgba(9,13,22,0.9); border: 1px solid rgba(255,255,255,0.05); border-radius: 10px;
+      padding: 0.6rem 0.75rem; font-family: 'JetBrains Mono', monospace; font-size: 0.76rem;
+      color: var(--text-muted); height: 52px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
     }
-
-    /* Leaderboard Table & FLIP Transitions */
-    .leaderboard-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      border-radius: 16px;
-      padding: 1.25rem;
-      backdrop-filter: blur(12px);
-    }
-
-    .custom-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 0.75rem;
-    }
-
-    .custom-table th {
-      text-align: left;
-      padding: 0.75rem 1rem;
-      font-size: 0.8rem;
-      font-weight: 700;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      border-bottom: 1px solid var(--border-color);
-    }
-
-    .custom-table td {
-      padding: 0.85rem 1rem;
-      font-size: 0.88rem;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-      transition: background 0.2s;
-    }
-
-    .custom-table tr {
-      transition: transform 0.4s ease-out, opacity 0.3s ease;
-    }
-
-    .custom-table tr:hover td {
-      background: rgba(255, 255, 255, 0.03);
-    }
-
-    .table-score-bar-bg {
-      width: 100px;
-      height: 6px;
-      background: rgba(255, 255, 255, 0.08);
-      border-radius: 3px;
-      overflow: hidden;
-      display: inline-block;
-      vertical-align: middle;
-      margin-left: 0.6rem;
-    }
-
-    .table-score-bar-fill {
-      height: 100%;
-      background: var(--accent-green);
-      border-radius: 3px;
-      transition: width 0.35s ease-out;
-    }
-
-    /* Log Box Slide Animation */
-    .log-line {
-      animation: fadeInSlide 0.25s ease-out forwards;
-      line-height: 1.5;
-    }
-
-    @keyframes fadeInSlide {
-      from {
-        opacity: 0;
-        transform: translateY(4px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    /* Modal */
-    .modal-overlay {
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0, 0, 0, 0.75);
-      backdrop-filter: blur(8px);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      z-index: 999;
-    }
-
-    .modal-overlay.active {
-      display: flex;
-    }
-
+    .leaderboard-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 16px; padding: 1.25rem; backdrop-filter: blur(12px); }
+    .custom-table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; }
+    .custom-table th { text-align: left; padding: 0.7rem 1rem; font-size: 0.78rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border-color); }
+    .custom-table td { padding: 0.8rem 1rem; font-size: 0.85rem; border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 0.2s; }
+    .custom-table tr { transition: transform 0.4s ease-out, opacity 0.3s ease; }
+    .custom-table tr:hover td { background: rgba(255,255,255,0.03); }
+    .table-score-bar-bg { width: 100px; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; display: inline-block; vertical-align: middle; margin-left: 0.6rem; }
+    .table-score-bar-fill { height: 100%; background: var(--accent-green); border-radius: 3px; transition: width 0.35s ease-out; }
+    .log-line { animation: fadeInSlide 0.25s ease-out forwards; line-height: 1.5; }
+    @keyframes fadeInSlide { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); display: none; align-items: center; justify-content: center; z-index: 999; }
+    .modal-overlay.active { display: flex; }
     .modal-content {
-      background: #0f172a;
-      border: 1px solid var(--border-glow);
-      border-radius: 18px;
-      width: 600px;
-      max-width: 90vw;
-      padding: 1.5rem;
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-      max-height: 80vh;
-      overflow-y: auto;
+      background: #0f172a; border: 1px solid var(--border-glow); border-radius: 18px;
+      width: 520px; max-width: 90vw; padding: 1.5rem;
+      display: flex; flex-direction: column; gap: 1rem; max-height: 80vh; overflow-y: auto;
     }
-
-    /* Accessibility / Reduced Motion */
+    .toggle-row { display: flex; align-items: center; gap: 0.6rem; font-size: 0.82rem; color: var(--text-muted); cursor: pointer; }
+    .toggle-switch { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(255,255,255,0.1); border-radius: 20px; transition: 0.2s;
+    }
+    .toggle-slider::before {
+      content: ''; position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px;
+      background: white; border-radius: 50%; transition: 0.2s;
+    }
+    .toggle-switch input:checked + .toggle-slider { background: var(--accent-primary); }
+    .toggle-switch input:checked + .toggle-slider::before { transform: translateX(16px); }
+    .empty-state { grid-column: 1 / -1; padding: 3rem; text-align: center; color: var(--text-dim); }
     @media (prefers-reduced-motion: reduce) {
-      *, ::before, ::after {
-        animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.01ms !important;
-        scroll-behavior: auto !important;
-      }
+      *, ::before, ::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
     }
   </style>
 </head>
 <body>
-
 <div class="app-container">
-  <!-- Sidebar -->
   <div class="sidebar">
     <div class="brand">
       <div class="brand-icon">⚡</div>
       <div>
         <div class="brand-title">Lite Benchmarks</div>
-        <div style="font-size: 0.75rem; color: var(--text-dim);">LLM Evaluation Studio</div>
+        <div style="font-size: 0.73rem; color: var(--text-dim);">LLM Evaluation Studio</div>
       </div>
     </div>
 
-    <!-- Actions -->
     <div style="display: flex; gap: 0.5rem;">
-      <button class="btn btn-primary" id="start-btn" style="flex: 1;" onclick="startRun()">🚀 Start Run</button>
-      <button class="btn btn-danger" id="stop-btn" style="display: none;" onclick="stopRun()">⏹️ Stop</button>
+      <button class="btn btn-primary" id="start-btn" style="flex: 1;" onclick="startRun()">🚀 Launch Run</button>
+      <button class="btn btn-danger" id="stop-btn" style="display: none;" onclick="stopRun()">⛔ Force Stop</button>
     </div>
 
-    <!-- Models Selection -->
     <div class="section-card">
       <div class="section-title">
-        <span>🤖 Target Models</span>
-        <button class="btn btn-secondary" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;" onclick="showCustomModelModal()">+ Custom</button>
+        <span>🛸 Test Fleet</span>
+        <button class="btn btn-secondary btn-sm" onclick="showCustomModelModal()">+ Add Model</button>
       </div>
-      <div class="checkbox-grid" id="models-list">
-        <!-- Populated via API -->
+      <div class="fleet-list" id="fleet-list">
+        <div style="font-size: 0.8rem; color: var(--text-dim); padding: 0.5rem;">No models in fleet. Add one below.</div>
       </div>
+      <div class="form-label" style="margin-top: 0.3rem;">Saved Models (click to add)</div>
+      <div class="saved-chips" id="saved-chips"></div>
     </div>
 
-    <!-- Global Provider Settings -->
-    <div class="section-card">
-      <div class="section-title">⚡ Reasoning & Setup</div>
-
-      <div class="form-group">
-        <label class="form-label">Thinking Effort</label>
-        <select class="form-select" id="thinking-effort-select">
-          <option value="">Default (From Config)</option>
-          <option value="max">Max (Deep Reasoning)</option>
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="low">Low</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- Benchmarks Selection -->
     <div class="section-card">
       <div class="section-title">📝 Benchmarks</div>
-      <div class="checkbox-grid" id="benchmarks-list">
-        <!-- Populated via API -->
-      </div>
-
-      <div class="form-group" style="margin-top: 0.5rem;">
+      <div class="checkbox-grid" id="benchmarks-list"></div>
+      <div class="form-group" style="margin-top: 0.4rem;">
         <label class="form-label">Questions per Benchmark</label>
-        <input type="number" class="form-input" id="num-samples-input" value="20" min="1" max="500">
+        <input type="number" class="form-input" id="num-samples-input" value="50" min="1" max="500">
       </div>
-
       <div class="form-group">
-        <label class="form-label">Concurrent Model Workers</label>
-        <input type="number" class="form-input" id="concurrency-input" value="4" min="1" max="8">
+        <label class="form-label">Concurrent Workers</label>
+        <input type="number" class="form-input" id="concurrency-input" value="4" min="1" max="16">
       </div>
-
+      <div class="form-group">
+        <label class="form-label">Parallel Models</label>
+        <input type="number" class="form-input" id="parallel-models-input" value="4" min="1" max="12" title="How many models run at once (each does its benchmarks one at a time); extra models queue">
+      </div>
       <label class="checkbox-item" style="margin-top: 0.2rem;">
         <input type="checkbox" id="unsafe-code-checkbox">
-        <span style="font-size: 0.8rem; color: var(--accent-amber);">Allow Unsafe Code Exec</span>
+        <span style="font-size: 0.8rem; color: var(--accent-amber);" title="Model-generated code is AST-scanned and run in a scrubbed subprocess: no env keys, temp working dir, no OS/network/process access.">Run Code-Exec Benchmarks (Sandboxed)</span>
       </label>
     </div>
   </div>
 
-  <!-- Main Content Area -->
   <div class="main-content">
-    <!-- Top Stats Header Bar -->
     <div class="top-bar">
       <div class="stat-group">
         <div class="stat-box">
           <div class="stat-value" id="elapsed-time-stat" style="color: var(--accent-cyan);">00:00</div>
-          <div class="stat-label">Elapsed Time</div>
+          <div class="stat-label">Elapsed</div>
         </div>
         <div class="stat-box">
           <div class="stat-value" id="active-models-stat" style="color: var(--accent-primary);">0</div>
-          <div class="stat-label">Active Models</div>
+          <div class="stat-label">Active</div>
         </div>
         <div class="stat-box">
           <div class="stat-value" id="total-tokens-stat" style="color: var(--accent-amber);">0</div>
-          <div class="stat-label">Total Tokens</div>
+          <div class="stat-label">Tokens</div>
         </div>
       </div>
-
-      <div class="throughput-chart-container">
-        <canvas id="throughput-canvas"></canvas>
-      </div>
-
-      <div style="display: flex; gap: 0.5rem;">
-        <button class="btn btn-secondary" onclick="generateReports()">📊 Generate Reports</button>
-      </div>
+      <div class="throughput-chart-container"><canvas id="throughput-canvas"></canvas></div>
+      <button class="btn btn-secondary btn-sm" onclick="generateReports()">📊 Reports</button>
     </div>
 
-    <!-- Active Models Live Cards Grid -->
     <div>
       <div class="grid-header" style="margin-bottom: 1rem;">
-        <div class="grid-title">📊 Live Model Execution Grid</div>
+        <div class="grid-title">📊 Live Execution Grid</div>
       </div>
       <div class="models-grid" id="live-cards-grid">
-        <div id="empty-cards-notice" style="grid-column: 1 / -1; padding: 3rem; text-align: center; color: var(--text-dim);">
-          No benchmark run active. Select models and click <strong>🚀 Start Run</strong>.
+        <div class="empty-state" id="empty-cards-notice">
+          No benchmark run active. Build your fleet and click <strong>🚀 Launch Run</strong>.
         </div>
       </div>
     </div>
 
-    <!-- Real-time Leaderboard -->
     <div class="leaderboard-card">
       <div class="grid-title">🏅 Live Leaderboard</div>
       <table class="custom-table">
         <thead>
-          <tr>
-            <th>Rank</th>
-            <th>Model</th>
-            <th>Accuracy</th>
-            <th>Questions</th>
-            <th>Tokens</th>
-            <th>Speed</th>
-            <th>Status</th>
-          </tr>
+          <tr><th>Rank</th><th>Model</th><th>Accuracy</th><th>Questions</th><th>Tokens</th><th>Speed</th><th>Status</th></tr>
         </thead>
         <tbody id="leaderboard-tbody">
-          <tr id="empty-leaderboard-notice">
-            <td colspan="7" style="text-align: center; color: var(--text-dim); padding: 2rem;">
-              No leaderboard data yet.
-            </td>
-          </tr>
+          <tr id="empty-leaderboard-notice"><td colspan="7" style="text-align: center; color: var(--text-dim); padding: 2rem;">No data yet.</td></tr>
         </tbody>
       </table>
     </div>
 
-    <!-- Live Event Logs -->
     <div class="section-card">
-      <div class="section-title">📜 Real-time System Log</div>
-      <div id="system-log-box" style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--text-muted); max-height: 140px; overflow-y: auto;">
-        <div class="log-line">[System Ready] Web dashboard connected.</div>
+      <div class="section-title">📜 System Log</div>
+      <div id="system-log-box" style="font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: var(--text-muted); max-height: 130px; overflow-y: auto;">
+        <div class="log-line">[System Ready] Dashboard connected.</div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Custom Model Modal -->
 <div class="modal-overlay" id="custom-model-modal">
   <div class="modal-content">
-    <div class="section-title">Add Custom Model / Endpoint</div>
-    
+    <div class="section-title">Add Model to Fleet</div>
     <div class="form-group">
-      <label class="form-label">LiteLLM Model ID (e.g. openai/gpt-4o, lm_studio/qwen2.5)</label>
-      <input type="text" class="form-input" id="modal-model-id" placeholder="provider/model-name">
+      <label class="form-label">Model ID (e.g. openai/gpt-4o, anthropic/claude-sonnet-4-20250514, lm_studio/qwen2.5)</label>
+      <input type="text" class="form-input" id="modal-model-id" placeholder="provider/model-name" oninput="detectProvider()">
     </div>
-
     <div class="form-group">
       <label class="form-label">Display Name</label>
-      <input type="text" class="form-input" id="modal-model-name" placeholder="Custom Model Name">
+      <input type="text" class="form-input" id="modal-model-name" placeholder="My Model">
     </div>
-
     <div class="form-group">
-      <label class="form-label">Thinking / Reasoning Effort</label>
+      <label class="form-label">Reasoning Effort</label>
       <select class="form-select" id="modal-thinking">
         <option value="">None</option>
         <option value="max">Max</option>
@@ -795,52 +344,130 @@
         <option value="low">Low</option>
       </select>
     </div>
-
-    <div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem;">
+    <div class="form-group">
+      <label class="form-label">API Key (env var)</label>
+      <select class="form-select" id="modal-api-key-env">
+        <option value="">Auto (litellm default)</option>
+      </select>
+      <div style="font-size: 0.72rem; color: var(--text-dim); margin-top: 0.2rem;" id="api-key-hint">
+        LiteLLM auto-detects keys for known providers. Select a specific env var to override.
+      </div>
+    </div>
+    <label class="toggle-row" style="margin-top: 0.3rem;">
+      <span class="toggle-switch"><input type="checkbox" id="modal-api-toggle" onchange="toggleApiUrl()"><span class="toggle-slider"></span></span>
+      Custom API Base URL
+    </label>
+    <div class="form-group" id="api-url-group" style="display: none;">
+      <label class="form-label">API Base URL (e.g. http://localhost:1234/v1)</label>
+      <input type="text" class="form-input" id="modal-api-base" placeholder="http://localhost:1234/v1">
+    </div>
+    <label class="checkbox-item" style="margin-top: 0.3rem;">
+      <input type="checkbox" id="modal-save-check" checked>
+      <span style="font-size: 0.8rem;">Save permanently</span>
+    </label>
+    <div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 0.75rem;">
       <button class="btn btn-secondary" onclick="closeCustomModelModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="addCustomModel()">Add Model</button>
+      <button class="btn btn-primary" onclick="addCustomModel()">Add to Fleet</button>
     </div>
   </div>
 </div>
 
 <script>
   let configData = null;
-  let customModels = [];
+  let savedModels = [];
+  let fleet = [];
   let isRunning = false;
+  let envKeys = [];
 
-  // Persistent DOM Node maps for persistent-diff updates
+  const PROVIDER_KEY_MAP = {
+    'openai': 'OPENAI_API_KEY',
+    'anthropic': 'ANTHROPIC_API_KEY',
+    'gemini': 'GEMINI_API_KEY',
+    'google': 'GOOGLE_API_KEY',
+    'deepseek': 'DEEPSEEK_API_KEY',
+    'groq': 'GROQ_API_KEY',
+    'mistral': 'MISTRAL_API_KEY',
+    'cohere': 'COHERE_API_KEY',
+    'perplexity': 'PERPLEXITYAI_API_KEY',
+    'together_ai': 'TOGETHER_API_KEY',
+    'fireworks_ai': 'FIREWORKS_AI_API_KEY',
+    'xai': 'XAI_API_KEY',
+    'azure': 'AZURE_API_KEY',
+    'bedrock': 'AWS_SECRET_ACCESS_KEY',
+    'vertex_ai': 'GOOGLE_API_KEY',
+  };
+
   const cardNodesMap = new Map();
   const rowNodesMap = new Map();
-  const sparklineHistories = new Map(); // mname -> array of TPS floats
-  let throughputHistory = []; // array of { time: Date, totalTokens: number }
+  const sparklineHistories = new Map();
+  let throughputHistory = [];
   let lastLogCount = 0;
 
   async function loadConfig() {
     try {
       const res = await fetch('/api/config');
       configData = await res.json();
-      renderConfigForm();
-    } catch (e) {
-      console.error("Failed to load config:", e);
+      renderBenchmarks();
+    } catch (e) { console.error("Failed to load config:", e); }
+  }
+
+  async function loadSavedModels() {
+    try {
+      const res = await fetch('/api/custom-models');
+      const data = await res.json();
+      savedModels = data.models || [];
+      renderSavedChips();
+    } catch (e) { console.error("Failed to load saved models:", e); }
+  }
+
+  async function loadEnvKeys() {
+    try {
+      const res = await fetch('/api/env-keys');
+      const data = await res.json();
+      envKeys = data.keys || [];
+      renderApiKeySelect();
+    } catch (e) { console.error("Failed to load env keys:", e); }
+  }
+
+  function renderApiKeySelect() {
+    const sel = document.getElementById('modal-api-key-env');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">Auto (litellm default)</option>';
+    envKeys.forEach(k => {
+      const opt = document.createElement('option');
+      opt.value = k;
+      opt.textContent = k + ' (set)';
+      sel.appendChild(opt);
+    });
+    const customOpt = document.createElement('option');
+    customOpt.value = '__custom__';
+    customOpt.textContent = 'Custom env var...';
+    sel.appendChild(customOpt);
+    if (current && current !== '__custom__') sel.value = current;
+  }
+
+  function detectProvider() {
+    const modelId = document.getElementById('modal-model-id').value.trim();
+    const provider = modelId.split('/')[0].toLowerCase();
+    const hint = document.getElementById('api-key-hint');
+    const sel = document.getElementById('modal-api-key-env');
+    const suggested = PROVIDER_KEY_MAP[provider];
+    if (suggested) {
+      const isSet = envKeys.includes(suggested);
+      hint.innerHTML = `Provider <strong>${escapeHtml(provider)}</strong> detected. Suggested: <code>${suggested}</code> ${isSet ? '<span style="color:var(--accent-green)">(found in env)</span>' : '<span style="color:var(--accent-amber)">(not found in env)</span>'}`;
+      if (isSet) sel.value = suggested;
+    } else if (provider) {
+      hint.textContent = `Provider "${provider}" — litellm will auto-detect the key, or select an env var above.`;
+    } else {
+      hint.textContent = 'LiteLLM auto-detects keys for known providers. Select a specific env var to override.';
     }
   }
 
-  function renderConfigForm() {
+  function renderBenchmarks() {
     if (!configData) return;
-
-    // Render Models
-    const modelsContainer = document.getElementById('models-list');
-    modelsContainer.innerHTML = configData.models.map(m => `
-      <label class="checkbox-item">
-        <input type="checkbox" class="model-check" value="${m.id}" data-name="${m.name}" checked>
-        <span>${m.name}</span>
-      </label>
-    `).join('');
-
-    // Render Benchmarks
-    const benchContainer = document.getElementById('benchmarks-list');
-    const bEntries = Object.entries(configData.benchmarks);
-    benchContainer.innerHTML = bEntries.map(([key, b]) => `
+    const container = document.getElementById('benchmarks-list');
+    const entries = Object.entries(configData.benchmarks);
+    container.innerHTML = entries.map(([key, b]) => `
       <label class="checkbox-item">
         <input type="checkbox" class="bench-check" value="${key}" ${b.enabled ? 'checked' : ''}>
         <span>${b.display || b.name} <small style="color:var(--text-dim)">(${b.category})</small></span>
@@ -848,63 +475,183 @@
     `).join('');
   }
 
-  function showCustomModelModal() {
-    document.getElementById('custom-model-modal').classList.add('active');
+  function renderSavedChips() {
+    const container = document.getElementById('saved-chips');
+    if (savedModels.length === 0) {
+      container.innerHTML = '<span style="font-size:0.75rem; color:var(--text-dim);">No saved models yet.</span>';
+      return;
+    }
+    container.innerHTML = savedModels.map(m => `
+      <span class="chip" onclick="addFromSaved('${escapeAttr(m.id)}')">
+        ${escapeHtml(m.name)}
+        <span class="chip-x" onclick="event.stopPropagation(); deleteSavedModel('${escapeAttr(m.id)}')">&times;</span>
+      </span>
+    `).join('');
   }
 
-  function closeCustomModelModal() {
-    document.getElementById('custom-model-modal').classList.remove('active');
+  // The same model id may appear multiple times with different thinking
+  // efforts. Duplicates are exact id+effort matches. Display names must stay
+  // unique because backend results are keyed by model name.
+  function addToFleet(entry) {
+    const effort = entry.thinking_effort || '';
+    if (fleet.some(f => f.id === entry.id && (f.thinking_effort || '') === effort)) return false;
+    if (fleet.some(f => f.name === entry.name)) {
+      const base = entry.name;
+      const suffix = effort || 'no-thinking';
+      entry.name = `${base} (${suffix})`;
+      let n = 2;
+      while (fleet.some(f => f.name === entry.name)) entry.name = `${base} (${suffix} ${n++})`;
+    }
+    fleet.push(entry);
+    return true;
   }
 
-  function addCustomModel() {
+  function onFleetEffortChange(i, val) {
+    const item = fleet[i];
+    const clash = fleet.some((f, j) => j !== i && f.id === item.id && (f.thinking_effort || '') === (val || ''));
+    if (clash) {
+      alert(`"${item.id}" with thinking "${val || 'none'}" is already in the fleet.`);
+      renderFleet();
+      return;
+    }
+    item.thinking_effort = val;
+    // Keep the auto-suffix in sync with the effort while the id is duplicated;
+    // restore the clean name once it is the only entry with that id.
+    const sameId = fleet.some((f, j) => j !== i && f.id === item.id);
+    const base = item.name.replace(/ \((?:max|high|medium|low|no-thinking)(?: \d+)?\)$/, '');
+    if (sameId) {
+      const suffix = val || 'no-thinking';
+      item.name = `${base} (${suffix})`;
+      let n = 2;
+      while (fleet.some((f, j) => j !== i && f.name === item.name)) item.name = `${base} (${suffix} ${n++})`;
+    } else {
+      item.name = base;
+    }
+    renderFleet();
+  }
+
+  function renderFleet() {
+    const container = document.getElementById('fleet-list');
+    if (fleet.length === 0) {
+      container.innerHTML = '<div style="font-size: 0.8rem; color: var(--text-dim); padding: 0.5rem;">No models in fleet. Add one above.</div>';
+      return;
+    }
+    container.innerHTML = fleet.map((m, i) => `
+      <div class="fleet-item">
+        <div style="flex:1; min-width:0;">
+          <div class="fi-name">${escapeHtml(m.name)}</div>
+          <div class="fi-id">${escapeHtml(m.id)}</div>
+        </div>
+        <select onchange="onFleetEffortChange(${i}, this.value)" title="Reasoning effort">
+          <option value="" ${!m.thinking_effort ? 'selected' : ''}>None</option>
+          <option value="max" ${m.thinking_effort==='max' ? 'selected' : ''}>Max</option>
+          <option value="high" ${m.thinking_effort==='high' ? 'selected' : ''}>High</option>
+          <option value="medium" ${m.thinking_effort==='medium' ? 'selected' : ''}>Med</option>
+          <option value="low" ${m.thinking_effort==='low' ? 'selected' : ''}>Low</option>
+        </select>
+        <span class="fi-remove" onclick="removeFromFleet(${i})">&times;</span>
+      </div>
+    `).join('');
+  }
+
+  function addFromSaved(id) {
+    const m = savedModels.find(s => s.id === id);
+    if (!m) return;
+    addToFleet({ id: m.id, name: m.name, thinking_effort: m.thinking_effort || '', api_base: m.api_base || '', api_key_env: m.api_key_env || '' });
+    renderFleet();
+  }
+
+  function removeFromFleet(idx) {
+    fleet.splice(idx, 1);
+    renderFleet();
+  }
+
+  async function deleteSavedModel(id) {
+    try {
+      const res = await fetch('/api/custom-models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', id })
+      });
+      const data = await res.json();
+      savedModels = data.models || [];
+      renderSavedChips();
+    } catch (e) { console.error(e); }
+  }
+
+  function showCustomModelModal() { document.getElementById('custom-model-modal').classList.add('active'); }
+  function closeCustomModelModal() { document.getElementById('custom-model-modal').classList.remove('active'); }
+  function toggleApiUrl() {
+    document.getElementById('api-url-group').style.display =
+      document.getElementById('modal-api-toggle').checked ? 'flex' : 'none';
+  }
+
+  async function addCustomModel() {
     const id = document.getElementById('modal-model-id').value.trim();
     const name = document.getElementById('modal-model-name').value.trim() || id;
     const thinking = document.getElementById('modal-thinking').value;
+    const apiBase = document.getElementById('modal-api-toggle').checked
+      ? document.getElementById('modal-api-base').value.trim() : '';
+    let apiKeyEnv = document.getElementById('modal-api-key-env').value;
+    if (apiKeyEnv === '__custom__') {
+      apiKeyEnv = prompt('Enter the environment variable name holding your API key:') || '';
+    }
+    const savePermanent = document.getElementById('modal-save-check').checked;
 
     if (!id) return;
 
-    const newM = { id, name, thinking_effort: thinking };
-    customModels.push(newM);
-    configData.models.push(newM);
-    renderConfigForm();
+    const entry = { id, name, thinking_effort: thinking || null, api_base: apiBase || null, api_key_env: apiKeyEnv || null };
+
+    addToFleet({ id, name, thinking_effort: thinking || '', api_base: apiBase || '', api_key_env: apiKeyEnv || '' });
+    renderFleet();
+
+    if (savePermanent) {
+      try {
+        const res = await fetch('/api/custom-models', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'add', ...entry })
+        });
+        const data = await res.json();
+        savedModels = data.models || [];
+        renderSavedChips();
+      } catch (e) { console.error(e); }
+    }
+
+    document.getElementById('modal-model-id').value = '';
+    document.getElementById('modal-model-name').value = '';
+    document.getElementById('modal-thinking').value = '';
+    document.getElementById('modal-api-key-env').value = '';
+    document.getElementById('modal-api-toggle').checked = false;
+    document.getElementById('modal-api-base').value = '';
+    document.getElementById('api-url-group').style.display = 'none';
+    document.getElementById('api-key-hint').textContent = 'LiteLLM auto-detects keys for known providers. Select a specific env var to override.';
     closeCustomModelModal();
   }
 
   async function startRun() {
-    const selectedModels = Array.from(document.querySelectorAll('.model-check:checked')).map(cb => {
-      const id = cb.value;
-      const name = cb.getAttribute('data-name');
-      return {
-        id,
-        name,
-        thinking_effort: document.getElementById('thinking-effort-select').value,
-      };
-    });
-
+    if (fleet.length === 0) { alert("Add at least one model to the fleet."); return; }
     const selectedBench = Array.from(document.querySelectorAll('.bench-check:checked')).map(cb => cb.value);
-
-    if (selectedModels.length === 0 || selectedBench.length === 0) {
-      alert("Please select at least one model and one benchmark.");
-      return;
-    }
+    if (selectedBench.length === 0) { alert("Select at least one benchmark."); return; }
 
     const payload = {
-      models: selectedModels,
+      models: fleet.map(m => ({
+        id: m.id, name: m.name,
+        thinking_effort: m.thinking_effort || null,
+        api_base: m.api_base || null,
+        api_key_env: m.api_key_env || null,
+      })),
       benchmarks: selectedBench,
       settings: {
-        num_samples: parseInt(document.getElementById('num-samples-input').value) || 20,
+        num_samples: parseInt(document.getElementById('num-samples-input').value) || 50,
         max_concurrency: parseInt(document.getElementById('concurrency-input').value) || 4,
+        max_concurrent_models: parseInt(document.getElementById('parallel-models-input').value) || 4,
         allow_unsafe_code_execution: document.getElementById('unsafe-code-checkbox').checked,
-        thinking_effort: document.getElementById('thinking-effort-select').value
       }
     };
 
     try {
-      const res = await fetch('/api/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      const res = await fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (res.ok) {
         document.getElementById('start-btn').style.display = 'none';
         document.getElementById('stop-btn').style.display = 'inline-flex';
@@ -913,12 +660,15 @@
         const err = await res.json();
         alert(err.error || "Failed to start run.");
       }
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
   }
 
   async function stopRun() {
+    // Instant client-side reset — the backend cancels queued work immediately
+    // and discards in-flight requests; SSE will reconcile shortly after.
+    document.getElementById('start-btn').style.display = 'inline-flex';
+    document.getElementById('stop-btn').style.display = 'none';
+    isRunning = false;
     await fetch('/api/stop', { method: 'POST' });
   }
 
@@ -926,66 +676,37 @@
     try {
       const res = await fetch('/api/reports', { method: 'POST' });
       const data = await res.json();
-      if (res.ok) {
-        alert("✅ README.md and charts generated successfully!");
-      } else {
-        alert(data.error || "Error generating reports.");
-      }
-    } catch (e) {
-      console.error(e);
-    }
+      if (res.ok) alert("Reports generated successfully!");
+      else alert(data.error || "Error generating reports.");
+    } catch (e) { console.error(e); }
   }
 
   function initStream() {
-    const ssePath = '/api/events';
-    const eventSource = new EventSource(ssePath);
-
-    eventSource.onmessage = (event) => {
-      try {
-        const status = JSON.parse(event.data);
-        updateDashboard(status);
-      } catch (err) {
-        console.error("SSE parse error:", err);
-      }
+    const es = new EventSource('/api/events');
+    es.onmessage = (event) => {
+      try { updateDashboard(JSON.parse(event.data)); } catch (err) { console.error("SSE parse error:", err); }
     };
-
-    eventSource.onerror = () => {
-      // Reconnect handled natively by EventSource
-    };
+    es.onerror = () => {};
   }
 
-  // Persistent-DOM Dashboard Renderer
   function updateDashboard(status) {
     isRunning = status.is_running;
+    document.getElementById('start-btn').style.display = isRunning ? 'none' : 'inline-flex';
+    document.getElementById('stop-btn').style.display = isRunning ? 'inline-flex' : 'none';
 
-    if (!isRunning) {
-      document.getElementById('start-btn').style.display = 'inline-flex';
-      document.getElementById('stop-btn').style.display = 'none';
-    } else {
-      document.getElementById('start-btn').style.display = 'none';
-      document.getElementById('stop-btn').style.display = 'inline-flex';
-    }
-
-    // Top Stats
     const elapsed = status.elapsed_seconds || 0;
-    const m = Math.floor(elapsed / 60);
-    const s = Math.floor(elapsed % 60);
-    document.getElementById('elapsed-time-stat').innerText = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    const m = Math.floor(elapsed / 60), s = Math.floor(elapsed % 60);
+    document.getElementById('elapsed-time-stat').innerText = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 
-    const statesObj = status.models || {};
-    const states = Object.values(statesObj);
-    const activeCount = states.filter(st => !st.is_finished && !st.is_failed).length;
-    document.getElementById('active-models-stat').innerText = activeCount;
-
+    const states = Object.values(status.models || {});
+    document.getElementById('active-models-stat').innerText = states.filter(st => !st.is_finished && !st.is_failed).length;
     const totalTokens = states.reduce((acc, st) => acc + (st.total_tokens || 0), 0);
     document.getElementById('total-tokens-stat').innerText = totalTokens.toLocaleString();
 
-    // Throughput Chart Data
     throughputHistory.push({ time: new Date(), totalTokens });
     if (throughputHistory.length > 40) throughputHistory.shift();
     drawThroughputChart();
 
-    // Logs rendering (append only new lines with animation)
     if (status.logs && status.logs.length > 0) {
       const logBox = document.getElementById('system-log-box');
       if (status.logs.length !== lastLogCount) {
@@ -995,50 +716,23 @@
       }
     }
 
-    // Render Cards using Persistent DOM Diffing
     renderModelCards(states);
-
-    // Render Leaderboard using FLIP Row Reordering
     renderLeaderboard(states);
   }
 
-  function escapeHtml(str) {
-    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
+  function escapeHtml(str) { return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function escapeAttr(str) { return String(str).replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
 
-  // Model Cards Persistent Renderer
   function renderModelCards(states) {
     const grid = document.getElementById('live-cards-grid');
     const emptyNotice = document.getElementById('empty-cards-notice');
-
-    if (states.length === 0) {
-      if (emptyNotice) emptyNotice.style.display = 'block';
-      cardNodesMap.forEach(node => node.remove());
-      cardNodesMap.clear();
-      return;
-    }
+    if (states.length === 0) { if (emptyNotice) emptyNotice.style.display = 'block'; cardNodesMap.forEach(n => n.remove()); cardNodesMap.clear(); return; }
     if (emptyNotice) emptyNotice.style.display = 'none';
-
     const currentNames = new Set(states.map(st => st.name));
-
-    // Remove obsolete cards
-    for (const [mname, node] of cardNodesMap.entries()) {
-      if (!currentNames.has(mname)) {
-        node.remove();
-        cardNodesMap.delete(mname);
-        sparklineHistories.delete(mname);
-      }
-    }
-
-    // Update or create cards
+    for (const [mname, node] of cardNodesMap.entries()) { if (!currentNames.has(mname)) { node.remove(); cardNodesMap.delete(mname); sparklineHistories.delete(mname); } }
     states.forEach(st => {
       let card = cardNodesMap.get(st.name);
-      if (!card) {
-        card = createCardDOM(st.name, st.id);
-        grid.appendChild(card);
-        cardNodesMap.set(st.name, card);
-        sparklineHistories.set(st.name, []);
-      }
+      if (!card) { card = createCardDOM(st.name, st.id); grid.appendChild(card); cardNodesMap.set(st.name, card); sparklineHistories.set(st.name, []); }
       updateCardDOM(card, st);
     });
   }
@@ -1048,84 +742,51 @@
     card.className = 'model-card';
     card.innerHTML = `
       <div class="model-card-header">
-        <div>
-          <div class="model-name">${escapeHtml(name)}</div>
-          <div class="model-id">${escapeHtml(id)}</div>
-        </div>
+        <div><div class="model-name">${escapeHtml(name)}</div><div class="model-id">${escapeHtml(id)}</div></div>
         <div class="status-badge">Idle</div>
       </div>
-
       <div class="card-top-section">
         <div class="gauge-wrapper">
-          <svg class="gauge-svg" viewBox="0 0 70 70">
-            <circle class="gauge-bg" cx="35" cy="35" r="32"></circle>
-            <circle class="gauge-fill" cx="35" cy="35" r="32"></circle>
-          </svg>
+          <svg class="gauge-svg" viewBox="0 0 70 70"><circle class="gauge-bg" cx="35" cy="35" r="32"></circle><circle class="gauge-fill" cx="35" cy="35" r="32"></circle></svg>
           <div class="gauge-text">0%</div>
         </div>
-
         <div class="progress-bar-container">
-          <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:var(--text-muted)">
-            <span class="bench-label">Benchmarking</span>
-            <span class="q-counter">0/0 (0%)</span>
+          <div style="display:flex; justify-content:space-between; font-size:0.76rem; color:var(--text-muted)">
+            <span class="bench-label">Benchmarking</span><span class="q-counter">0/0 (0%)</span>
           </div>
-          <div class="progress-bar-track">
-            <div class="progress-bar-fill" style="width: 0%"></div>
-          </div>
+          <div class="progress-bar-track"><div class="progress-bar-fill" style="width: 0%"></div></div>
         </div>
       </div>
-
       <div class="card-metrics">
-        <div class="metric-item">
-          <div class="metric-val scored-val">0/0</div>
-          <div class="metric-lbl">Scored</div>
-        </div>
-        <div class="metric-item">
-          <div class="metric-val tps-val" style="color:var(--accent-cyan)">—</div>
-          <div class="metric-lbl">Tokens/s</div>
-        </div>
-        <div class="metric-item">
-          <canvas class="sparkline-canvas" width="90" height="24"></canvas>
-          <div class="metric-lbl">Speed Trend</div>
-        </div>
+        <div class="metric-item"><div class="metric-val scored-val">0/0</div><div class="metric-lbl">Scored</div></div>
+        <div class="metric-item"><div class="metric-val tps-val" style="color:var(--accent-cyan)">—</div><div class="metric-lbl">Tokens/s</div></div>
+        <div class="metric-item"><canvas class="sparkline-canvas" width="90" height="24"></canvas><div class="metric-lbl">Speed</div></div>
       </div>
-
-      <div class="output-box">Awaiting response generation...</div>
-    `;
+      <div class="output-box">Awaiting response...</div>`;
     return card;
   }
 
   function updateCardDOM(card, st) {
     let badgeClass = "running";
-    if (st.is_failed) badgeClass = "failed";
-    else if (st.is_finished) badgeClass = "finished";
-
+    if (st.is_failed) badgeClass = "failed"; else if (st.is_finished) badgeClass = "finished";
     card.className = `model-card ${badgeClass}`;
-
     const badge = card.querySelector('.status-badge');
     badge.className = `status-badge ${badgeClass}`;
     badge.innerText = st.status || "Running";
 
     const pct = st.q_total > 0 ? (st.q_index / st.q_total * 100) : 0;
-    const accFloat = st.accuracy !== null && st.accuracy !== undefined ? st.accuracy * 100 : 0;
-    const accStr = st.accuracy !== null && st.accuracy !== undefined ? `${accFloat.toFixed(1)}%` : '0%';
-
-    // Gauge circle stroke-dashoffset: radius 32 -> circumference ~201
+    const accFloat = st.accuracy != null ? st.accuracy * 100 : 0;
+    const accStr = st.accuracy != null ? `${accFloat.toFixed(1)}%` : '0%';
     const circumference = 201;
-    const offset = circumference - (accFloat / 100 * circumference);
-    const gaugeFill = card.querySelector('.gauge-fill');
-    gaugeFill.style.strokeDashoffset = offset;
+    card.querySelector('.gauge-fill').style.strokeDashoffset = circumference - (accFloat / 100 * circumference);
     card.querySelector('.gauge-text').innerText = accStr;
-
     card.querySelector('.bench-label').innerText = st.current_benchmark_display || st.current_benchmark || 'Benchmarking';
     card.querySelector('.q-counter').innerText = `${st.q_index}/${st.q_total} (${pct.toFixed(0)}%)`;
     card.querySelector('.progress-bar-fill').style.width = `${pct}%`;
-
     card.querySelector('.scored-val').innerText = `${st.correct}/${st.scored}`;
     card.querySelector('.tps-val').innerText = st.avg_tps ? `${st.avg_tps}/s` : '—';
-    card.querySelector('.output-box').innerText = st.latest_snippet || 'Awaiting response generation...';
+    card.querySelector('.output-box').innerText = st.latest_snippet || 'Awaiting response...';
 
-    // Update TPS sparkline
     const hist = sparklineHistories.get(st.name) || [];
     if (st.avg_tps) hist.push(st.avg_tps);
     if (hist.length > 25) hist.shift();
@@ -1135,23 +796,15 @@
   function drawSparkline(canvas, data) {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    const w = canvas.width;
-    const h = canvas.height;
+    const w = canvas.width, h = canvas.height;
     ctx.clearRect(0, 0, w, h);
     if (data.length < 2) return;
-
-    const max = Math.max(...data, 10);
-    const min = Math.min(...data, 0);
-
-    ctx.beginPath();
-    ctx.strokeStyle = '#06b6d4';
-    ctx.lineWidth = 1.5;
-
+    const max = Math.max(...data, 10), min = Math.min(...data, 0);
+    ctx.beginPath(); ctx.strokeStyle = '#06b6d4'; ctx.lineWidth = 1.5;
     for (let i = 0; i < data.length; i++) {
       const x = (i / (data.length - 1)) * w;
       const y = h - ((data[i] - min) / (max - min || 1)) * (h - 4) - 2;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }
     ctx.stroke();
   }
@@ -1161,14 +814,10 @@
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width;
-    canvas.height = rect.height;
-    const w = canvas.width;
-    const h = canvas.height;
-
+    canvas.width = rect.width; canvas.height = rect.height;
+    const w = canvas.width, h = canvas.height;
     ctx.clearRect(0, 0, w, h);
     if (throughputHistory.length < 2) return;
-
     const rates = [];
     for (let i = 1; i < throughputHistory.length; i++) {
       const dt = (throughputHistory[i].time - throughputHistory[i-1].time) / 1000;
@@ -1176,96 +825,47 @@
       rates.push(dt > 0 ? dtok / dt : 0);
     }
     if (rates.length === 0) return;
-
     const max = Math.max(...rates, 10);
-    ctx.beginPath();
-    ctx.strokeStyle = 'rgba(99, 102, 241, 0.8)';
-    ctx.lineWidth = 2;
-
+    ctx.beginPath(); ctx.strokeStyle = 'rgba(99,102,241,0.8)'; ctx.lineWidth = 2;
     for (let i = 0; i < rates.length; i++) {
       const x = (i / (rates.length - 1)) * w;
       const y = h - (rates[i] / max) * (h - 6) - 3;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }
     ctx.stroke();
-
-    // Fill gradient
-    ctx.lineTo(w, h);
-    ctx.lineTo(0, h);
-    ctx.closePath();
+    ctx.lineTo(w, h); ctx.lineTo(0, h); ctx.closePath();
     const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, 'rgba(99, 102, 241, 0.25)');
-    grad.addColorStop(1, 'rgba(99, 102, 241, 0.0)');
-    ctx.fillStyle = grad;
-    ctx.fill();
+    grad.addColorStop(0, 'rgba(99,102,241,0.25)'); grad.addColorStop(1, 'rgba(99,102,241,0.0)');
+    ctx.fillStyle = grad; ctx.fill();
   }
 
-  // Leaderboard Persistent FLIP Renderer
   function renderLeaderboard(states) {
     const tbody = document.getElementById('leaderboard-tbody');
     const emptyNotice = document.getElementById('empty-leaderboard-notice');
-
-    if (states.length === 0) {
-      if (emptyNotice) emptyNotice.style.display = 'table-row';
-      rowNodesMap.forEach(row => row.remove());
-      rowNodesMap.clear();
-      return;
-    }
+    if (states.length === 0) { if (emptyNotice) emptyNotice.style.display = 'table-row'; rowNodesMap.forEach(r => r.remove()); rowNodesMap.clear(); return; }
     if (emptyNotice) emptyNotice.style.display = 'none';
-
-    // Sort by accuracy descending
     const sorted = [...states].sort((a, b) => (b.accuracy || -1) - (a.accuracy || -1));
-
-    // FLIP: First - Record current Y positions
     const firstPositions = new Map();
-    rowNodesMap.forEach((row, mname) => {
-      firstPositions.set(mname, row.getBoundingClientRect().top);
-    });
-
+    rowNodesMap.forEach((row, mname) => { firstPositions.set(mname, row.getBoundingClientRect().top); });
     const currentNames = new Set(states.map(st => st.name));
-    for (const [mname, row] of rowNodesMap.entries()) {
-      if (!currentNames.has(mname)) {
-        row.remove();
-        rowNodesMap.delete(mname);
-      }
-    }
-
+    for (const [mname, row] of rowNodesMap.entries()) { if (!currentNames.has(mname)) { row.remove(); rowNodesMap.delete(mname); } }
     const medals = ['🥇 1st', '🥈 2nd', '🥉 3rd'];
-
-    // Update / Create rows and append in sorted order
     sorted.forEach((st, idx) => {
       let row = rowNodesMap.get(st.name);
-      if (!row) {
-        row = document.createElement('tr');
-        rowNodesMap.set(st.name, row);
-      }
-
-      const accPct = st.accuracy !== null && st.accuracy !== undefined ? (st.accuracy * 100).toFixed(1) : 'N/A';
-      const accNum = st.accuracy !== null && st.accuracy !== undefined ? st.accuracy * 100 : 0;
-      const rankText = medals[idx] || `${idx + 1}th`;
-
+      if (!row) { row = document.createElement('tr'); rowNodesMap.set(st.name, row); }
+      const accPct = st.accuracy != null ? (st.accuracy * 100).toFixed(1) : 'N/A';
+      const accNum = st.accuracy != null ? st.accuracy * 100 : 0;
       row.innerHTML = `
-        <td><strong>${rankText}</strong></td>
+        <td><strong>${medals[idx] || (idx+1)+'th'}</strong></td>
         <td><strong>${escapeHtml(st.name)}</strong></td>
-        <td>
-          <span style="color:var(--accent-green); font-weight:700">${accPct}%</span>
-          <div class="table-score-bar-bg">
-            <div class="table-score-bar-fill" style="width: ${accNum}%"></div>
-          </div>
-        </td>
+        <td><span style="color:var(--accent-green); font-weight:700">${accPct}%</span><div class="table-score-bar-bg"><div class="table-score-bar-fill" style="width:${accNum}%"></div></div></td>
         <td>${st.scored}/${st.q_total}</td>
-        <td>${(st.total_tokens || 0).toLocaleString()}</td>
-        <td>${st.avg_tps ? st.avg_tps + '/s' : '—'}</td>
-        <td><span class="status-badge ${st.is_failed ? 'failed' : (st.is_finished ? 'finished' : 'running')}">${st.status || 'Running'}</span></td>
-      `;
-
+        <td>${(st.total_tokens||0).toLocaleString()}</td>
+        <td>${st.avg_tps ? st.avg_tps+'/s' : '—'}</td>
+        <td><span class="status-badge ${st.is_failed?'failed':(st.is_finished?'finished':'running')}">${st.status||'Running'}</span></td>`;
       tbody.appendChild(row);
     });
-
-    // FLIP: Last, Invert, Play
-    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (!prefersReducedMotion) {
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       sorted.forEach(st => {
         const row = rowNodesMap.get(st.name);
         const firstY = firstPositions.get(st.name);
@@ -1273,20 +873,17 @@
           const lastY = row.getBoundingClientRect().top;
           const deltaY = firstY - lastY;
           if (deltaY !== 0) {
-            row.style.transform = `translateY(${deltaY}px)`;
-            row.style.transition = 'none';
-            requestAnimationFrame(() => {
-              row.style.transition = 'transform 0.4s ease-out';
-              row.style.transform = 'translateY(0)';
-            });
+            row.style.transform = `translateY(${deltaY}px)`; row.style.transition = 'none';
+            requestAnimationFrame(() => { row.style.transition = 'transform 0.4s ease-out'; row.style.transform = 'translateY(0)'; });
           }
         }
       });
     }
   }
 
-  // Load config on startup and initialize EventSource
   loadConfig();
+  loadSavedModels();
+  loadEnvKeys();
   initStream();
 </script>
 </body>

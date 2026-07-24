@@ -264,7 +264,9 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     _a("### Scoring")
     _a("- **All scoring is programmatic** — no LLM-as-judge is used anywhere")
     _a(
-        "- Code benchmarks are skipped unless unsafe code execution is enabled in an isolated sandbox"
+        "- Code benchmarks require explicit opt-in and run in a restricted sandbox "
+        "(AST scan of generated code + scrubbed subprocess environment: no API keys, "
+        "temp working dir, no OS/network/process access)"
     )
     _a("- Multiple-choice benchmarks extract the answer letter and compare to ground truth")
     _a("- Math benchmarks extract boxed/numerical answers and evaluate symbolically or numerically")

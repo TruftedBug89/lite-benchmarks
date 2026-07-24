@@ -93,11 +93,15 @@ def generate(model: ModelConfig | str, prompt: str, settings: Settings) -> Gener
         thinking_effort = model.thinking_effort
         max_tokens = model.max_tokens or settings.max_tokens
         extra_params = model.extra_params
+        api_base = model.api_base
+        api_key_env = model.api_key_env
     else:
         model_id = model
         thinking_effort = None
         max_tokens = settings.max_tokens
         extra_params = {}
+        api_base = None
+        api_key_env = None
 
     local = _is_local(model_id)
 
@@ -112,6 +116,13 @@ def generate(model: ModelConfig | str, prompt: str, settings: Settings) -> Gener
 
     if thinking_effort:
         kwargs["reasoning_effort"] = _map_reasoning_effort(thinking_effort)
+    if api_base:
+        kwargs["api_base"] = api_base
+    if api_key_env:
+        import os as _os
+        resolved_key = _os.environ.get(api_key_env)
+        if resolved_key:
+            kwargs["api_key"] = resolved_key
     if extra_params:
         kwargs.update(extra_params)
 

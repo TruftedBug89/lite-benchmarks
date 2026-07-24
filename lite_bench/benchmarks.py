@@ -3,12 +3,8 @@
 from __future__ import annotations
 
 import json
-import os
 import random
 import re
-import subprocess
-import sys
-import tempfile
 from abc import ABC, abstractmethod
 
 from rich.console import Console
@@ -16,6 +12,7 @@ from rich.console import Console
 from .config import BenchmarkConfig, Settings
 from .datasets import load_questions
 from .ifeval_verifiers import verify_all
+from .sandbox import execute_sandboxed
 
 console = Console()
 
@@ -117,27 +114,18 @@ def _extract_boxed(text: str) -> str | None:
     return None
 
 
-def _execute_code(code: str, timeout: int) -> bool:
-    fd, path = tempfile.mkstemp(suffix=".py")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(code)
-        result = subprocess.run(
-            [sys.executable, path],
-            capture_output=True,
-            timeout=timeout,
-            text=True,
+def _execute_code(untrusted_code: str, trusted_code: str, timeout: int) -> bool:
+    """Run model-generated code + trusted test harness in the sandbox.
+
+    The untrusted portion is AST-scanned for dangerous constructs first;
+    the child process runs with a scrubbed environment in a temp directory.
+    """
+    ok, violations = execute_sandboxed(untrusted_code, trusted_code, timeout)
+    if violations:
+        console.print(
+            f"[yellow]Sandbox rejected generated code: {violations[0]}[/yellow]"
         )
-        return result.returncode == 0
-    except subprocess.TimeoutExpired:
-        return False
-    except Exception:
-        return False
-    finally:
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
+    return ok
 
 
 # ---------------------------------------------------------------------------
@@ -195,8 +183,7 @@ class HumanEvalBenchmark(BenchmarkBase):
         code = _strip_code_blocks(response)
         if not code.lstrip().startswith("def "):
             code = q["prompt"] + "\n" + code
-        full = code + "\n\n" + q["test"]
-        return 1.0 if _execute_code(full, self.settings.code_exec_timeout) else 0.0
+        return 1.0 if _execute_code(code, q["test"], self.settings.code_exec_timeout) else 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -221,9 +208,8 @@ class MBPPBenchmark(BenchmarkBase):
         code = _strip_code_blocks(response)
         imports = "\n".join(q.get("test_imports", []))
         tests = "\n".join(q.get("test_list", []))
-        parts = [p for p in [imports, code, tests] if p.strip()]
-        full = "\n\n".join(parts)
-        return 1.0 if _execute_code(full, self.settings.code_exec_timeout) else 0.0
+        trusted = "\n\n".join(p for p in [imports, tests] if p.strip())
+        return 1.0 if _execute_code(code, trusted, self.settings.code_exec_timeout) else 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -255,8 +241,7 @@ class BigCodeBenchBenchmark(BenchmarkBase):
             "result = unittest.TextTestRunner(verbosity=0).run(suite)\n"
             "sys.exit(0 if result.wasSuccessful() else 1)\n"
         )
-        full = code + "\n\n" + test + runner
-        return 1.0 if _execute_code(full, self.settings.code_exec_timeout) else 0.0
+        return 1.0 if _execute_code(code, test + runner, self.settings.code_exec_timeout) else 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -720,9 +705,8 @@ class SciCodeBenchmark(BenchmarkBase):
         tests = q.get("general_tests", "")
         tests_str = "\n\n".join(tests) if isinstance(tests, list) else str(tests)
 
-        parts = [p for p in [deps_str, code, tests_str] if p.strip()]
-        full = "\n\n".join(parts)
-        return 1.0 if _execute_code(full, self.settings.code_exec_timeout) else 0.0
+        trusted = "\n\n".join(p for p in [deps_str, tests_str] if p.strip())
+        return 1.0 if _execute_code(code, trusted, self.settings.code_exec_timeout) else 0.0
 
 
 # ---------------------------------------------------------------------------

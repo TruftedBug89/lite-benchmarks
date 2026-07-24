@@ -141,6 +141,7 @@ def save_results(
             "request_timeout": config.settings.request_timeout,
             "max_retries": config.settings.max_retries,
             "max_concurrency": config.settings.max_concurrency,
+            "max_concurrent_models": config.settings.max_concurrent_models,
         },
         "models": results,
     }

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import random
+import threading
 import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from typing import Protocol
 
 from rich.console import Console
@@ -20,6 +21,7 @@ console = Console()
 
 class EngineCallbacks(Protocol):
     def on_event(self, model_name: str, message: str) -> None: ...
+    def on_benchmark_start(self, model_name: str, bench_name: str, total_questions: int) -> None: ...
     def on_question_done(self, model_name: str, bench_name: str, detail: dict) -> None: ...
     def on_benchmark_done(self, model_name: str, bench_name: str, summary: dict) -> None: ...
     def on_model_done(self, model_name: str) -> None: ...
@@ -28,6 +30,9 @@ class EngineCallbacks(Protocol):
 class DefaultEngineCallbacks:
     def on_event(self, model_name: str, message: str) -> None:
         console.print(f"[{model_name}] {message}")
+
+    def on_benchmark_start(self, model_name: str, bench_name: str, total_questions: int) -> None:
+        pass
 
     def on_question_done(self, model_name: str, bench_name: str, detail: dict) -> None:
         pass
@@ -146,68 +151,86 @@ def run_engine(
     allow_unsafe: bool = False,
     existing_results: dict | None = None,
 ) -> dict:
-    """Execute benchmarks across models using thread pool concurrency."""
+    """Execute benchmarks with parallel models and sequential benchmarks.
+
+    Up to ``settings.max_concurrent_models`` models run at once; extra models
+    queue. Each model works through its benchmarks one at a time, using
+    ``settings.max_concurrency`` workers for a benchmark's questions.
+    ``should_stop`` is polled every ~0.5s: queued work is cancelled
+    immediately and running models unwind without waiting for in-flight
+    requests.
+    """
     if callbacks is None:
         callbacks = DefaultEngineCallbacks()
 
     results: dict = dict(existing_results) if existing_results else {}
     settings = config.settings
 
-    for model in models:
-        if should_stop and should_stop():
-            break
+    def _stopped() -> bool:
+        return bool(should_stop and should_stop())
 
-        callbacks.on_event(model.name, f"Starting model run for {model.name}")
-        mdata = results.setdefault(
+    # Pre-create per-model result containers single-threaded (no races later).
+    for model in models:
+        results.setdefault(
             model.name,
             {
                 "model_id": model.id,
                 "thinking_effort": model.thinking_effort,
             },
         )
+        callbacks.on_event(model.name, f"Starting model run for {model.name}")
 
-        fatal_encountered = False
+    results_lock = threading.Lock()  # guards results mutation + checkpoint saves
+    done_lock = threading.Lock()  # guards done_models
+    done_models: set[str] = set()
 
-        for bench_name, bench_cfg in benchmarks.items():
-            if should_stop and should_stop() or fatal_encountered:
-                break
+    def _run_model(model: ModelConfig) -> None:
+        """Run all benchmarks for one model, sequentially. Owns its exceptions."""
+        try:
+            fatal_encountered = False
 
-            try:
-                bench_obj = create_benchmark(bench_name, bench_cfg, settings)
-            except ValueError as e:
-                callbacks.on_event(model.name, f"Skipping benchmark {bench_name}: {e}")
-                continue
+            for bench_name, bench_cfg in benchmarks.items():
+                if _stopped() or fatal_encountered:
+                    break
 
-            # Code execution safety check
-            if bench_obj.requires_code_execution and not (
-                allow_unsafe or settings.allow_unsafe_code_execution
-            ):
+                try:
+                    bench_obj = create_benchmark(bench_name, bench_cfg, settings)
+                except ValueError as e:
+                    callbacks.on_event(model.name, f"Skipping benchmark {bench_name}: {e}")
+                    continue
+
+                # Code execution safety check
+                if bench_obj.requires_code_execution and not (
+                    allow_unsafe or settings.allow_unsafe_code_execution
+                ):
+                    callbacks.on_event(
+                        model.name,
+                        f"Skipping {bench_name} (sandboxed code execution requires explicit opt-in)",
+                    )
+                    continue
+
+                try:
+                    questions = bench_obj.load()
+                except Exception as e:
+                    callbacks.on_event(model.name, f"Failed to load dataset for {bench_name}: {e}")
+                    continue
+
+                if not questions:
+                    callbacks.on_event(model.name, f"No questions loaded for {bench_name}")
+                    continue
+
+                q_hash = compute_question_hash(questions)
+                callbacks.on_benchmark_start(model.name, bench_name, len(questions))
                 callbacks.on_event(
                     model.name,
-                    f"Skipping {bench_name} (code execution requires explicit unsafe opt-in)",
+                    f"Running {bench_obj.display_name} ({len(questions)} questions)...",
                 )
-                continue
 
-            try:
-                questions = bench_obj.load()
-            except Exception as e:
-                callbacks.on_event(model.name, f"Failed to load dataset for {bench_name}: {e}")
-                continue
+                details: list[dict] = []
+                max_concurrency = max(1, settings.max_concurrency)
 
-            if not questions:
-                callbacks.on_event(model.name, f"No questions loaded for {bench_name}")
-                continue
-
-            q_hash = compute_question_hash(questions)
-            callbacks.on_event(
-                model.name,
-                f"Running {bench_obj.display_name} ({len(questions)} questions)...",
-            )
-
-            details: list[dict] = []
-            max_concurrency = max(1, settings.max_concurrency)
-
-            with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
+                # Manual executor (no `with`) so stop never waits on in-flight calls.
+                executor = ThreadPoolExecutor(max_workers=max_concurrency)
                 futures = {
                     executor.submit(
                         process_question,
@@ -220,79 +243,126 @@ def run_engine(
                     ): (qi, q)
                     for qi, q in enumerate(questions)
                 }
-
+                pending = set(futures)
                 try:
-                    for future in as_completed(futures):
-                        if should_stop and should_stop():
-                            executor.shutdown(wait=False, cancel_futures=True)
+                    while pending:
+                        if _stopped() or fatal_encountered:
+                            for f in pending:
+                                f.cancel()
                             break
-                        try:
-                            detail = future.result()
-                            details.append(detail)
-                            callbacks.on_question_done(model.name, bench_name, detail)
-                        except FatalModelError as fe:
-                            callbacks.on_event(model.name, f"[CRITICAL] {fe}")
-                            fatal_encountered = True
-                            executor.shutdown(wait=False, cancel_futures=True)
-                            break
-                        except Exception as exc:
-                            qi, _ = futures[future]
-                            err_detail = {
-                                "question_id": qi,
-                                "status": "error",
-                                "error_msg": str(exc),
-                                "score": 0.0,
-                            }
-                            details.append(err_detail)
-                            callbacks.on_question_done(model.name, bench_name, err_detail)
+                        done, pending = wait(pending, timeout=0.5, return_when=FIRST_COMPLETED)
+                        for future in done:
+                            try:
+                                detail = future.result()
+                                details.append(detail)
+                                callbacks.on_question_done(model.name, bench_name, detail)
+                            except FatalModelError as fe:
+                                callbacks.on_event(model.name, f"[CRITICAL] {fe}")
+                                fatal_encountered = True
+                                for f in pending:
+                                    f.cancel()
+                                pending = {f for f in pending if not f.done()}
+                                break
+                            except Exception as exc:
+                                qi, _ = futures[future]
+                                err_detail = {
+                                    "question_id": qi,
+                                    "status": "error",
+                                    "error_msg": str(exc),
+                                    "score": 0.0,
+                                }
+                                details.append(err_detail)
+                                callbacks.on_question_done(model.name, bench_name, err_detail)
                 except Exception as loop_err:
                     callbacks.on_event(model.name, f"Execution error in benchmark pool: {loop_err}")
+                finally:
+                    executor.shutdown(wait=False, cancel_futures=True)
 
-            if fatal_encountered:
-                callbacks.on_event(
-                    model.name, f"Aborting remaining benchmarks for {model.name} due to fatal error"
-                )
+                if fatal_encountered:
+                    callbacks.on_event(
+                        model.name,
+                        f"Aborting remaining benchmarks for {model.name} due to fatal error",
+                    )
 
-            # Summarize benchmark
-            scored = [d for d in details if d["status"] in ("success", "eval_error")]
-            correct_count = sum(d["score"] for d in scored)
-            total_count = len(scored)
-            score = (correct_count / total_count) if total_count > 0 else 0.0
+                # Summarize benchmark
+                scored = [d for d in details if d["status"] in ("success", "eval_error")]
+                correct_count = sum(d["score"] for d in scored)
+                total_count = len(scored)
+                score = (correct_count / total_count) if total_count > 0 else 0.0
 
-            b_summary: dict = {
-                "score": round(score, 4),
-                "correct": correct_count,
-                "total": total_count,
-                "question_hash": q_hash,
-                "input_tokens": sum(d.get("input_tokens", 0) for d in details),
-                "output_tokens": sum(d.get("output_tokens", 0) for d in details),
-                "thinking_tokens": sum(d.get("thinking_tokens", 0) for d in details),
-                "total_tokens": sum(d.get("total_tokens", 0) for d in details),
-                "details": details,
-            }
+                b_summary: dict = {
+                    "score": round(score, 4),
+                    "correct": correct_count,
+                    "total": total_count,
+                    "question_hash": q_hash,
+                    "input_tokens": sum(d.get("input_tokens", 0) for d in details),
+                    "output_tokens": sum(d.get("output_tokens", 0) for d in details),
+                    "thinking_tokens": sum(d.get("thinking_tokens", 0) for d in details),
+                    "total_tokens": sum(d.get("total_tokens", 0) for d in details),
+                    "details": details,
+                }
 
-            tps_vals = [d["tokens_per_second"] for d in details if d.get("tokens_per_second") is not None]
-            if tps_vals:
-                b_summary["avg_tokens_per_second"] = round(sum(tps_vals) / len(tps_vals), 2)
+                tps_vals = [d["tokens_per_second"] for d in details if d.get("tokens_per_second") is not None]
+                if tps_vals:
+                    b_summary["avg_tokens_per_second"] = round(sum(tps_vals) / len(tps_vals), 2)
 
-            time_vals = [d["total_time_ms"] for d in details if d.get("total_time_ms") is not None]
-            if time_vals:
-                b_summary["avg_time_ms"] = round(sum(time_vals) / len(time_vals), 1)
+                time_vals = [d["total_time_ms"] for d in details if d.get("total_time_ms") is not None]
+                if time_vals:
+                    b_summary["avg_time_ms"] = round(sum(time_vals) / len(time_vals), 1)
 
-            cost_vals = [d["cost_usd"] for d in details if d.get("cost_usd") is not None]
-            if cost_vals:
-                b_summary["total_cost_usd"] = round(sum(cost_vals), 6)
+                cost_vals = [d["cost_usd"] for d in details if d.get("cost_usd") is not None]
+                if cost_vals:
+                    b_summary["total_cost_usd"] = round(sum(cost_vals), 6)
 
-            mdata[bench_name] = b_summary
-            aggregate(mdata, config)
+                # Critical section: save_results iterates the whole results tree
+                # while other model threads mutate their own mdata.
+                with results_lock:
+                    mdata = results[model.name]
+                    mdata[bench_name] = b_summary
+                    aggregate(mdata, config)
+                    # Checkpoint save
+                    save_results(results, config, settings.results_dir, "latest.json")
+                callbacks.on_benchmark_done(model.name, bench_name, b_summary)
 
-            # Checkpoint save
-            save_results(results, config, settings.results_dir, "latest.json")
-            callbacks.on_benchmark_done(model.name, bench_name, b_summary)
+        except Exception as model_err:
+            callbacks.on_event(model.name, f"Model run error: {model_err}")
+        finally:
+            with done_lock:
+                done_models.add(model.name)
+            callbacks.on_model_done(model.name)
 
-            if fatal_encountered:
-                break
+    if not models:
+        return results
 
-        callbacks.on_model_done(model.name)
+    workers = max(1, min(settings.max_concurrent_models, len(models)))
+    pool = ThreadPoolExecutor(max_workers=workers)
+    try:
+        model_futures = [pool.submit(_run_model, m) for m in models]
+        pending_models = set(model_futures)
+        while pending_models:
+            done_m, pending_models = wait(
+                pending_models, timeout=0.5, return_when=FIRST_COMPLETED
+            )
+            for f in done_m:
+                try:
+                    f.result()
+                except Exception:
+                    pass  # _run_model owns and logs its exceptions
+            if _stopped():
+                for f in pending_models:
+                    f.cancel()
+                pending_models = {f for f in pending_models if not f.done()}
+    finally:
+        pool.shutdown(wait=True)
+
+    # Queued models cancelled on stop never reached on_model_done — close them
+    # out so the UI doesn't leave them "Running".
+    for model in models:
+        with done_lock:
+            fire = model.name not in done_models
+            if fire:
+                done_models.add(model.name)
+        if fire:
+            callbacks.on_model_done(model.name)
 
     return results

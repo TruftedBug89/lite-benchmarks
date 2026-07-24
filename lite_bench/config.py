@@ -19,6 +19,8 @@ class ModelConfig:
     name: str
     thinking_effort: str | None = None
     max_tokens: int | None = None
+    api_base: str | None = None
+    api_key_env: str | None = None
     extra_params: dict[str, Any] = field(default_factory=dict)
 
 
@@ -44,6 +46,7 @@ class Settings:
     code_exec_timeout: int = 15
     max_retries: int = 3
     max_concurrency: int = 5
+    max_concurrent_models: int = 4
     results_dir: str = "results"
     charts_dir: str = "charts"
     hf_token_env: str = "HF_TOKEN"
@@ -140,6 +143,12 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         max_tokens_val = item.get("max_tokens")
         if max_tokens_val is not None:
             max_tokens_val = _positive_int(max_tokens_val, f"models[{index}].max_tokens")
+        api_base_val = item.get("api_base")
+        if api_base_val is not None:
+            api_base_val = _string(api_base_val, f"models[{index}].api_base")
+        api_key_env_val = item.get("api_key_env")
+        if api_key_env_val is not None:
+            api_key_env_val = _string(api_key_env_val, f"models[{index}].api_key_env")
         extra_params = item.get("extra_params", {})
         if not isinstance(extra_params, Mapping):
             raise ValueError(f"models[{index}].extra_params must be a mapping.")
@@ -149,6 +158,8 @@ def load_config(path: str | Path = "config.yaml") -> Config:
                 name=name,
                 thinking_effort=thinking_effort,
                 max_tokens=max_tokens_val,
+                api_base=api_base_val,
+                api_key_env=api_key_env_val,
                 extra_params=dict(extra_params),
             )
         )
@@ -221,6 +232,10 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         ),
         max_retries=_nonnegative_int(raw_settings.get("max_retries", 3), "settings.max_retries"),
         max_concurrency=_positive_int(raw_settings.get("max_concurrency", 5), "settings.max_concurrency"),
+        max_concurrent_models=_positive_int(
+            raw_settings.get("max_concurrent_models", 4),
+            "settings.max_concurrent_models",
+        ),
         results_dir=_string(raw_settings.get("results_dir", "results"), "settings.results_dir"),
         charts_dir=_string(raw_settings.get("charts_dir", "charts"), "settings.charts_dir"),
         hf_token_env=_string(raw_settings.get("hf_token_env", "HF_TOKEN"), "settings.hf_token_env"),

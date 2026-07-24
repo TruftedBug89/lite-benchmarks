@@ -123,6 +123,9 @@ settings:
   code_exec_timeout: 30
   max_retries: 3
   max_concurrency: 5
+  # How many models run in parallel (each does its benchmarks one at a time);
+  # extra models queue.
+  max_concurrent_models: 4
   results_dir: results
   charts_dir: charts
   # HuggingFace token for gated datasets (e.g. cais/hle).

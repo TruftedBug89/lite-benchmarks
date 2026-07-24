@@ -36,6 +36,35 @@ from lite_bench.results_store import load_latest_results
 ROOT_DIR = Path(__file__).parent.resolve()
 WEB_DIR = ROOT_DIR / "web"
 CHARTS_DIR = ROOT_DIR / "charts"
+CUSTOM_MODELS_FILE = ROOT_DIR / "custom_models.json"
+
+# Load .env from the repo root if present (does NOT override real env vars).
+# This is where users typically put LITE_BENCH_ALLOW_UNSAFE=1 and HF_TOKEN.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(ROOT_DIR / ".env")
+except ImportError:
+    pass
+
+
+def _env_truthy(name: str) -> bool:
+    """Robust env flag check: tolerates trailing spaces from cmd's `set X=1 `
+    and common truthy spellings. Values are never logged."""
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def load_custom_models() -> list[dict]:
+    if CUSTOM_MODELS_FILE.is_file():
+        try:
+            return json.loads(CUSTOM_MODELS_FILE.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return []
+    return []
+
+
+def save_custom_models(models: list[dict]) -> None:
+    CUSTOM_MODELS_FILE.write_text(json.dumps(models, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 @dataclass
@@ -96,73 +125,87 @@ class EngineCallbacksBridge(DefaultEngineCallbacks):
         self.engine = engine
 
     def on_event(self, model_name: str, message: str) -> None:
-        self.engine.log(f"[{model_name}] {message}")
-        state = self.engine.states.get(model_name)
-        if state:
-            state.add_event(message)
+        with self.engine.state_lock:
+            self.engine._log_locked(f"[{model_name}] {message}")
+            state = self.engine.states.get(model_name)
+            if state:
+                state.add_event(message)
+
+    def on_benchmark_start(self, model_name: str, bench_name: str, total_questions: int) -> None:
+        with self.engine.state_lock:
+            state = self.engine.states.get(model_name)
+            if state:
+                state.q_total += total_questions
+                state.current_benchmark = bench_name
+                info = BENCHMARK_INFO.get(bench_name, {})
+                state.current_benchmark_display = info.get("display", bench_name)
+                state.status = "Running"
 
     def on_question_done(self, model_name: str, bench_name: str, detail: dict) -> None:
-        state = self.engine.states.get(model_name)
-        if not state:
-            return
+        with self.engine.state_lock:
+            state = self.engine.states.get(model_name)
+            if not state:
+                return
 
-        state.current_benchmark = bench_name
-        info = BENCHMARK_INFO.get(bench_name, {})
-        state.current_benchmark_display = info.get("display", bench_name)
+            state.current_benchmark = bench_name
+            info = BENCHMARK_INFO.get(bench_name, {})
+            state.current_benchmark_display = info.get("display", bench_name)
 
-        qi = detail.get("question_id", 0)
-        status = detail.get("status", "error")
-        score = float(detail.get("score", 0.0))
+            qi = detail.get("question_id", 0)
+            status = detail.get("status", "error")
+            score = float(detail.get("score", 0.0))
 
-        state.q_index = qi + 1
-        state.scored += 1
-        state.correct += score
-        if status in ("error", "eval_error"):
-            state.failed += 1
+            state.q_index = qi + 1
+            state.scored += 1
+            state.correct += score
+            if status in ("error", "eval_error"):
+                state.failed += 1
 
-        state.input_tokens += detail.get("input_tokens", 0)
-        state.output_tokens += detail.get("output_tokens", 0)
-        state.thinking_tokens += detail.get("thinking_tokens", 0)
-        state.total_tokens += detail.get("total_tokens", 0)
+            state.input_tokens += detail.get("input_tokens", 0)
+            state.output_tokens += detail.get("output_tokens", 0)
+            state.thinking_tokens += detail.get("thinking_tokens", 0)
+            state.total_tokens += detail.get("total_tokens", 0)
 
-        tps = detail.get("tokens_per_second")
-        if tps is not None:
-            if state.avg_tps is None:
-                state.avg_tps = tps
-            else:
-                state.avg_tps = (state.avg_tps * 0.8) + (tps * 0.2)
+            tps = detail.get("tokens_per_second")
+            if tps is not None:
+                if state.avg_tps is None:
+                    state.avg_tps = tps
+                else:
+                    state.avg_tps = (state.avg_tps * 0.8) + (tps * 0.2)
 
-        resp = detail.get("response", "")
-        if resp:
-            state.latest_snippet = resp[:150].replace("\n", " ")
+            resp = detail.get("response", "")
+            if resp:
+                state.latest_snippet = resp[:150].replace("\n", " ")
 
-        q_entry = {
-            "index": qi,
-            "prompt": detail.get("prompt", "")[:300],
-            "status": status,
-            "score": score,
-            "response_text": resp[:1000],
-            "error_msg": detail.get("error_msg", ""),
-            "input_tokens": detail.get("input_tokens", 0),
-            "output_tokens": detail.get("output_tokens", 0),
-            "thinking_tokens": detail.get("thinking_tokens", 0),
-            "total_tokens": detail.get("total_tokens", 0),
-            "time_ms": detail.get("total_time_ms"),
-            "tps": tps,
-            "cost_usd": detail.get("cost_usd"),
-        }
-        state.questions.append(q_entry)
+            q_entry = {
+                "index": qi,
+                "prompt": detail.get("prompt", "")[:300],
+                "status": status,
+                "score": score,
+                "response_text": resp[:1000],
+                "error_msg": detail.get("error_msg", ""),
+                "input_tokens": detail.get("input_tokens", 0),
+                "output_tokens": detail.get("output_tokens", 0),
+                "thinking_tokens": detail.get("thinking_tokens", 0),
+                "total_tokens": detail.get("total_tokens", 0),
+                "time_ms": detail.get("total_time_ms"),
+                "tps": tps,
+                "cost_usd": detail.get("cost_usd"),
+            }
+            state.questions.append(q_entry)
 
     def on_benchmark_done(self, model_name: str, bench_name: str, summary: dict) -> None:
-        state = self.engine.states.get(model_name)
-        if state:
-            state.benchmark_scores[bench_name] = summary.get("score", 0.0)
+        with self.engine.state_lock:
+            state = self.engine.states.get(model_name)
+            if state:
+                state.benchmark_scores[bench_name] = summary.get("score", 0.0)
 
     def on_model_done(self, model_name: str) -> None:
-        state = self.engine.states.get(model_name)
-        if state:
-            state.is_finished = True
-            state.status = "Completed"
+        with self.engine.state_lock:
+            state = self.engine.states.get(model_name)
+            if state:
+                state.is_finished = True
+                state.status = "Completed"
 
 
 class DashboardEngine:
@@ -176,27 +219,56 @@ class DashboardEngine:
         self.logs: list[str] = []
         self.current_config: Config | None = None
         self.worker_thread: threading.Thread | None = None
+        self.state_lock = threading.RLock()
+        self._stop_event = threading.Event()
+        self._run_id: int = 0
 
-    def log(self, msg: str) -> None:
+    def _log_locked(self, msg: str) -> None:
+        """Append a log entry. Caller must hold state_lock."""
         ts = time.strftime("%H:%M:%S")
         entry = f"[{ts}] {msg}"
         self.logs.append(entry)
         if len(self.logs) > 100:
             self.logs.pop(0)
 
+    def log(self, msg: str) -> None:
+        with self.state_lock:
+            self._log_locked(msg)
+
     def stop(self) -> None:
-        if self.is_running:
+        """Force stop: cancel everything queued and reset state immediately.
+
+        The worker thread unwinds in the background without blocking the UI;
+        in-flight provider requests are discarded as they return. A fresh
+        per-run stop event and run-id guard ensure a subsequent run is never
+        affected by the previous one winding down.
+        """
+        with self.state_lock:
+            if not self.is_running:
+                return
+            self._stop_event.set()
             self.stop_requested = True
-            self.log("⏹️ Stop request initiated by user.")
+            self._log_locked("⛔ Force stop — cancelling all queued work immediately.")
+            self.is_running = False
+            self.finish_time = time.time()
+            for st in self.states.values():
+                if not st.is_finished:
+                    st.status = "Stopped"
+                    st.is_finished = True
 
     def run_async(self, run_payload: dict, base_config: Config) -> None:
-        if self.is_running:
-            return
-        self.is_running = True
-        self.stop_requested = False
-        self.start_time = time.time()
-        self.finish_time = None
-        self.states = {}
+        with self.state_lock:
+            if self.is_running:
+                return
+            self.is_running = True
+            self.stop_requested = False
+            self._stop_event = threading.Event()
+            self._run_id += 1
+            run_id = self._run_id
+            stop_event = self._stop_event
+            self.start_time = time.time()
+            self.finish_time = None
+            self.states = {}
         self.results = {}
         self.logs = []
         self.log("🚀 Initializing benchmark run...")
@@ -209,6 +281,8 @@ class DashboardEngine:
             name = str(m.get("name", mid)).strip() or mid
             thinking_effort = m.get("thinking_effort")
             max_tokens = m.get("max_tokens")
+            api_base = m.get("api_base")
+            api_key_env = m.get("api_key_env")
 
             models.append(
                 ModelConfig(
@@ -216,6 +290,8 @@ class DashboardEngine:
                     name=name,
                     thinking_effort=thinking_effort if thinking_effort else None,
                     max_tokens=int(max_tokens) if max_tokens else None,
+                    api_base=api_base if api_base else None,
+                    api_key_env=api_key_env if api_key_env else None,
                     extra_params={},
                 )
             )
@@ -244,13 +320,15 @@ class DashboardEngine:
 
         # Check unsafe code execution policy
         allow_unsafe_requested = bool(user_settings.get("allow_unsafe_code_execution", False))
-        allow_unsafe_env = os.environ.get("LITE_BENCH_ALLOW_UNSAFE") == "1"
+        allow_unsafe_env = _env_truthy("LITE_BENCH_ALLOW_UNSAFE")
         allow_unsafe = allow_unsafe_requested and allow_unsafe_env
 
         if allow_unsafe_requested and not allow_unsafe_env:
             self.log(
-                "⚠️ Unsafe code execution requested in UI, but LITE_BENCH_ALLOW_UNSAFE=1 "
-                "environment variable is not set. Code execution benchmarks will be skipped."
+                "⚠️ Code-execution benchmarks requested but LITE_BENCH_ALLOW_UNSAFE is not "
+                "set in the SERVER's environment. Set it before launching web_app.py "
+                "(or add LITE_BENCH_ALLOW_UNSAFE=1 to a .env file next to it) and restart. "
+                "Code-execution benchmarks will be skipped."
             )
 
         settings = Settings(
@@ -261,6 +339,9 @@ class DashboardEngine:
             code_exec_timeout=user_settings.get("code_exec_timeout", base_config.settings.code_exec_timeout),
             max_retries=user_settings.get("max_retries", base_config.settings.max_retries),
             max_concurrency=user_settings.get("max_concurrency", base_config.settings.max_concurrency),
+            max_concurrent_models=user_settings.get(
+                "max_concurrent_models", base_config.settings.max_concurrent_models
+            ),
             results_dir=base_config.settings.results_dir,
             charts_dir=base_config.settings.charts_dir,
             hf_token_env=base_config.settings.hf_token_env,
@@ -291,16 +372,24 @@ class DashboardEngine:
                     models=models,
                     benchmarks=benchmarks,
                     callbacks=callbacks,
-                    should_stop=lambda: self.stop_requested,
+                    should_stop=stop_event.is_set,
                     allow_unsafe=allow_unsafe,
                     existing_results=existing,
                 )
-                self.log("✅ Benchmark run finished.")
+                with self.state_lock:
+                    if self._run_id == run_id:
+                        if stop_event.is_set():
+                            self._log_locked("⛔ Benchmark run force-stopped.")
+                        else:
+                            self._log_locked("✅ Benchmark run finished.")
             except Exception as e:
                 self.log(f"❌ Error during benchmark execution: {e}")
             finally:
-                self.is_running = False
-                self.finish_time = time.time()
+                # Only touch shared state if no newer run has started since.
+                with self.state_lock:
+                    if self._run_id == run_id:
+                        self.is_running = False
+                        self.finish_time = time.time()
 
         self.worker_thread = threading.Thread(target=_worker, daemon=True)
         self.worker_thread.start()
@@ -310,19 +399,20 @@ class DashboardEngine:
             (self.finish_time or time.time()) - self.start_time if self.start_time > 0 else 0
         )
 
-        model_states_json = {}
-        for mname, s in self.states.items():
-            d = asdict(s)
-            d["accuracy"] = s.accuracy
-            model_states_json[mname] = d
+        with self.state_lock:
+            model_states_json = {}
+            for mname, s in self.states.items():
+                d = asdict(s)
+                d["accuracy"] = s.accuracy
+                model_states_json[mname] = d
 
-        return {
-            "is_running": self.is_running,
-            "stop_requested": self.stop_requested,
-            "elapsed_seconds": round(elapsed, 1),
-            "logs": self.logs[-30:],
-            "models": model_states_json,
-        }
+            return {
+                "is_running": self.is_running,
+                "stop_requested": self.stop_requested,
+                "elapsed_seconds": round(elapsed, 1),
+                "logs": self.logs[-30:],
+                "models": model_states_json,
+            }
 
 
 ENGINE = DashboardEngine()
@@ -428,6 +518,20 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(e)}, status=500)
             return
 
+        if path == "/api/custom-models":
+            self._send_json({"models": load_custom_models()})
+            return
+
+        if path == "/api/env-keys":
+            known_keys = []
+            for key, val in os.environ.items():
+                upper = key.upper()
+                if ("API_KEY" in upper or "APIKEY" in upper or upper.endswith("_KEY")) and val:
+                    known_keys.append(key)
+            known_keys.sort()
+            self._send_json({"keys": known_keys})
+            return
+
         if path == "/api/events":
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -436,12 +540,12 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
             try:
-                for _ in range(200):
+                while True:
                     status_json = json.dumps(ENGINE.get_status_dict())
                     self.wfile.write(f"data: {status_json}\n\n".encode())
                     self.wfile.flush()
                     time.sleep(0.3)
-            except (BrokenPipeError, ConnectionResetError):
+            except (BrokenPipeError, ConnectionResetError, OSError):
                 pass
             return
 
@@ -496,6 +600,35 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/stop":
             ENGINE.stop()
             self._send_json({"status": "stopping"})
+            return
+
+        if path == "/api/custom-models":
+            models = load_custom_models()
+            action = payload.get("action", "add")
+            if action == "add":
+                model_entry = {
+                    "id": payload.get("id", "").strip(),
+                    "name": payload.get("name", "").strip(),
+                    "thinking_effort": payload.get("thinking_effort") or None,
+                    "api_base": payload.get("api_base") or None,
+                    "api_key_env": payload.get("api_key_env") or None,
+                }
+                if not model_entry["id"]:
+                    self._send_json({"error": "Model ID is required."}, status=400)
+                    return
+                if not model_entry["name"]:
+                    model_entry["name"] = model_entry["id"]
+                models = [m for m in models if m["id"] != model_entry["id"]]
+                models.append(model_entry)
+                save_custom_models(models)
+                self._send_json({"status": "added", "models": models})
+            elif action == "delete":
+                mid = payload.get("id", "").strip()
+                models = [m for m in models if m["id"] != mid]
+                save_custom_models(models)
+                self._send_json({"status": "deleted", "models": models})
+            else:
+                self._send_json({"error": "Unknown action."}, status=400)
             return
 
         if path == "/api/reports":
