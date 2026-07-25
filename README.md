@@ -26,68 +26,13 @@ grouped into 5 core categories. Results, rankings, and charts below are
 
 ## 🏅 Leaderboard
 
-| Rank | Model | Overall | 💻 Coding | 🔬 Science | 📐 Math | 📚 Knowledge | 📋 Instruction |
-|:----:|-------|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|
-| 🥇 | **deepseek/deepseek-v4-flash** 🧠 | **59.8%** | 40.0% | 39.0% | 56.0% | 80.0% | 84.0% |
-| 🥈 | **gemini/gemini-3.1-flash-lite** 🧠 | **52.0%** | 29.5% | 51.0% | 78.0% | 60.0% | 41.3% |
-
-*🧠 indicates reasoning models that utilize thinking tokens or have explicit thinking effort configured.*
+*No results yet. Run `py web_app.py` to launch the dashboard and run benchmarks.*
 
 ### Per-Benchmark Scores
 
-| Model | BigCodeBench-Hard | HumanEval+ | MBPP+ | GPQA Diamond | SciBench | AIME 2024/2025 | MATH-500 | MMLU-Pro | IFEval | SciCode | SuperGPQA | Tau-Bench (Retail) |
-|-------|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|
-| deepseek/deepseek-v4-flash | 20% (10/50) ±10.9pp | 90% (45/50) ±8.5pp | 10% (5/50) ±8.5pp | 58% (29/50) ±13.2pp | 20% (10/50) ±10.9pp | 24% (12/50) ±11.6pp | 88% (44/50) ±9.1pp | 80% (40/50) ±10.9pp | 84% (42/50) ±10.1pp | N/A | N/A | N/A |
-| gemini/gemini-3.1-flash-lite | 20% (10/50) ±10.9pp | 90% (45/50) ±8.5pp | 8% (4/50) ±7.8pp | 62% (31/50) ±13.0pp | 40% (20/50) ±13.1pp | 58% (29/50) ±13.2pp | 98% (49/50) ±5.1pp | 60% (30/50) ±13.1pp | 83% (38/46) ±10.8pp | 0% (0/50) ±3.6pp | N/A | 0% (0/3) ±28.1pp |
-
-*±pp indicates 95% Wilson score confidence interval half-width.*
-
 ## 📊 Charts
 
-### Overall Scores
-
-*Horizontal bar chart ranked by overall score (average of all category scores).*
-
-![Overall Scores](charts/leaderboard.png)
-
-### Category Breakdown
-
-*Grouped bar chart comparing each model across the 5 categories.*
-
-![Category Breakdown](charts/categories.png)
-
-### Category Radar
-
-*Spider chart showing each model's profile across categories. Larger area = stronger overall.*
-
-![Category Radar](charts/radar.png)
-
-### Benchmark Heatmap
-
-*Per-benchmark scores for every model. Green = high, red = low.*
-
-![Benchmark Heatmap](charts/heatmap.png)
-
-### Token Breakdown
-
-*Stacked bar chart of input, thinking, and output tokens per model.*
-
-![Token Breakdown](charts/tokens.png)
-
-### Thinking Effort vs Performance
-
-*Scatter plot showing if models that use more thinking tokens achieve higher overall scores.*
-
-![Thinking Effort vs Performance](charts/thinking_scatter.png)
-
 ## 🪙 Token Usage & Performance
-
-| Model | Input | Output | Thinking | Total | Out % | Think % | Avg TPS | Avg Time | Est. Cost |
-|-------|------:|-------:|---------:|------:|------:|--------:|--------:|---------:|----------:|
-| deepseek/deepseek-v4-flash | 66,677 | 55,762 | 680,781 | 803,220 | 7% | 85% | 94.4 | 16.8s | — |
-| gemini/gemini-3.1-flash-lite | 87,458 | 186,297 | 0 | 273,755 | 68% | — | 64.2 | 5.6s | — |
-
-*TPS = output tokens/second (cloud APIs only, skipped for local models). Est. Cost calculated via LiteLLM cost tables.*
 
 ## 🔬 Methodology
 
@@ -99,9 +44,9 @@ grouped into 5 core categories. Results, rankings, and charts below are
 
 ### Scoring
 - **All scoring is programmatic** — no LLM-as-judge is used anywhere
-- Code benchmarks require explicit opt-in and run in a restricted sandbox (AST scan of generated code + scrubbed subprocess environment: no API keys, temp working dir, no OS/network/process access)
+- Code benchmarks require explicit opt-in (``allow_unsafe_code_execution``) and run in a layered sandbox: an AST scan of generated code rejects destructive / escape constructs, the child runs with a scrubbed environment (no API keys, temp working dir, no OS/network/process access), and on Windows it is additionally confined by a Job Object that blocks grandchild processes and UI access. The opt-in gate is enforced at the sandbox layer, so it fails closed even for direct callers.
 - Multiple-choice benchmarks extract the answer letter and compare to ground truth
-- Math benchmarks extract boxed/numerical answers and evaluate symbolically or numerically
+- Math benchmarks extract boxed/numerical answers and evaluate via normalized string or numerical comparison
 - IFEval uses its 25 strict programmatic verifiers (word count, format, keywords, etc.)
 - Tau-Bench verifies tool function name AND argument dictionary match
 
@@ -177,6 +122,7 @@ models:
 ```
 ├── config.yaml              # Models, benchmarks, categories, settings
 ├── web_app.py               # Web dashboard server
+├── windows_sandbox.py       # Windows Job-object/restricted-token sandbox
 ├── README.md                # ← this file (auto-generated)
 ├── web/                     # Web dashboard frontend (HTML/CSS/JS)
 ├── lite_bench/
@@ -188,6 +134,7 @@ models:
 │   ├── datasets.py          # Deterministic HuggingFace sampling
 │   ├── benchmarks.py        # Benchmark implementations & verifiers
 │   ├── ifeval_verifiers.py  # 25 strict IFEval verifiers
+│   ├── sandbox.py           # Code-exec sandbox (AST scan + subprocess + Win job)
 │   ├── charts.py            # matplotlib chart generation
 │   └── readme_gen.py        # README generator
 ├── results/                 # JSON results per run
@@ -197,4 +144,4 @@ models:
 
 ---
 
-*Auto-generated by [lite-benchmarks](.) on 2026-07-23 18:31 UTC. Use the Web Dashboard to update.*
+*Auto-generated by [lite-benchmarks](.) on 2026-07-25 00:22 UTC. Use the Web Dashboard to update.*

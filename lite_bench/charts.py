@@ -31,13 +31,23 @@ def _style(ax):
     ax.grid(axis="x", alpha=0.3)
 
 
+def _rel(path: Path) -> str:
+    """Markdown link to a chart, normalized to forward slashes (portable on
+    Windows) and anchored to ``charts_dir`` rather than a hardcoded "charts/"."""
+    return str(path).replace("\\", "/")
+
+
+def _is_model_dict(results: dict, mname: str) -> bool:
+    return isinstance(results.get(mname), dict)
+
+
 def generate_all(results: dict, config: Config, charts_dir: str) -> list[str]:
     """Generate all charts. Returns list of relative paths to PNGs."""
     out = Path(charts_dir)
     out.mkdir(parents=True, exist_ok=True)
     paths: list[str] = []
 
-    model_names = list(results.keys())
+    model_names = [m for m in results if isinstance(results[m], dict)]
     bench_names = list(config.enabled_benchmarks().keys())
     cat_names = list(config.categories.keys())
 
@@ -111,7 +121,7 @@ def _leaderboard_bar(ranked, overall, out: Path) -> str:
     path = out / "leaderboard.png"
     fig.savefig(path, dpi=150)
     plt.close(fig)
-    return f"charts/{path.name}"
+    return _rel(path)
 
 
 def _category_bars(ranked, cat_scores, cat_names, out: Path) -> str:
@@ -137,7 +147,7 @@ def _category_bars(ranked, cat_scores, cat_names, out: Path) -> str:
     path = out / "categories.png"
     fig.savefig(path, dpi=150)
     plt.close(fig)
-    return f"charts/{path.name}"
+    return _rel(path)
 
 
 def _radar(ranked, cat_scores, cat_names, out: Path) -> str:
@@ -163,7 +173,7 @@ def _radar(ranked, cat_scores, cat_names, out: Path) -> str:
     path = out / "radar.png"
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
-    return f"charts/{path.name}"
+    return _rel(path)
 
 
 def _heatmap(ranked, bench_scores, bench_names, config, out: Path) -> str:
@@ -172,7 +182,10 @@ def _heatmap(ranked, bench_scores, bench_names, config, out: Path) -> str:
     ]
     data = np.array(
         [
-            [bench_scores[model].get(benchmark, np.nan) * 100 for benchmark in bench_names]
+            [
+                (v * 100) if (v := bench_scores[model].get(benchmark, np.nan)) is not None else np.nan
+                for benchmark in bench_names
+            ]
             for model in ranked
         ]
     )
@@ -196,7 +209,7 @@ def _heatmap(ranked, bench_scores, bench_names, config, out: Path) -> str:
     path = out / "heatmap.png"
     fig.savefig(path, dpi=150)
     plt.close(fig)
-    return f"charts/{path.name}"
+    return _rel(path)
 
 
 def _token_breakdown(ranked, token_data, out: Path) -> str:
@@ -222,7 +235,7 @@ def _token_breakdown(ranked, token_data, out: Path) -> str:
     path = out / "tokens.png"
     fig.savefig(path, dpi=150)
     plt.close(fig)
-    return f"charts/{path.name}"
+    return _rel(path)
 
 
 def _thinking_vs_score(ranked, token_data, overall, out: Path) -> str:
@@ -248,4 +261,4 @@ def _thinking_vs_score(ranked, token_data, overall, out: Path) -> str:
     path = out / "thinking_scatter.png"
     fig.savefig(path, dpi=150)
     plt.close(fig)
-    return f"charts/{path.name}"
+    return _rel(path)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import string
 import unittest
 
 from lite_bench.benchmarks import (
@@ -105,8 +106,14 @@ class EvaluationPrecisionTests(unittest.TestCase):
         self.assertTrue(verify_number_words("one two three", relation="equal to", num_words=3))
 
     def test_ifeval_paragraph_splitting(self) -> None:
-        text = "Paragraph one is here.\n\nParagraph two is here.\n\nParagraph three is here."
+        # Official IFEval: number_paragraphs counts paragraphs separated by the
+        # "***" markdown divider (NOT blank lines).
+        text = "Paragraph one is here. *** Paragraph two is here. *** Paragraph three is here."
         self.assertTrue(verify_number_paragraphs(text, num_paragraphs=3))
+        # Blank-line separation alone is a single paragraph for this instruction.
+        blank = "Para one.\n\nPara two.\n\nPara three."
+        self.assertTrue(verify_number_paragraphs(blank, num_paragraphs=1))
+        self.assertFalse(verify_number_paragraphs(blank, num_paragraphs=3))
 
     def test_ifeval_keyword_regex_escaping(self) -> None:
         text = "I love programming in C++!"
@@ -122,6 +129,62 @@ class EvaluationPrecisionTests(unittest.TestCase):
     def test_ifeval_json_code_blocks(self) -> None:
         response = "```json\n{\"status\": \"ok\"}\n```"
         self.assertTrue(verify_json_format(response))
+
+    # ── Multiple-choice extraction: prose false positives must not hijack ──
+
+    def test_extract_letter_ignores_pronoun_i_in_extended_options(self) -> None:
+        """With a 10-option (A–J) answer set the letter ``I`` is a *valid*
+        option, so the English pronoun "I" (as in "I am sure") must NOT be
+        extracted as the answer. Before the ``_PRONOUN_I`` filter, the reverse
+        scan would pick "I" over the real answer "J" here."""
+        valid_ten = set(string.ascii_uppercase[:10])  # {A..J}
+        # "I" trails the real answer J and is the last bare letter token: a
+        # naive reverse scan would return "I" (valid for A-J) -> wrong.
+        self.assertEqual(_extract_letter("J is my answer. I am sure", valid_ten), "J")
+        # The pronoun never wins even when no other letter is present yet an
+        # explicit "answer is X" clause gives the real one.
+        self.assertEqual(_extract_letter("I think the answer is F", valid_ten), "F")
+
+    def test_extract_letter_lowercase_article_not_hijacked(self) -> None:
+        """The lowercase articles ``a``/``i`` must never be promoted to an
+        option letter, even when they are the only letter-shaped tokens in the
+        last line — a real answer stated elsewhere must still win."""
+        valid = {"A", "B", "C", "D"}
+        # Prose "a nice day" must not become option A; the real answer is C.
+        self.assertEqual(_extract_letter("It is a nice day. The answer is (C).", valid), "C")
+        # A trailing lowercase article alone must not produce a false letter.
+        self.assertIsNone(_extract_letter("i am unsure here", valid))
+
+    # ── MATH-500: symbolic gold must not be matched to a bare number ─────
+
+    def test_math500_symbolic_gold_not_matched_to_bare_number(self) -> None:
+        """Numeric comparison only fires when the GOLD answer is itself a plain
+        number. A symbolic gold (\\sqrt{2}, 3\\sqrt{2}, 2^5) must NOT be matched
+        by digits pulled out of the model's response — that used to mark wrong
+        answers correct (\\sqrt{2} -> "2", 2^5 -> "5"/"32")."""
+        bench = MATH500Benchmark(self.config, self.settings)
+
+        # Symbolic gold vs. a bare numeric boxed answer -> wrong.
+        self.assertEqual(bench.evaluate({"answer": "\\sqrt{2}"}, "\\boxed{2}"), 0.0)
+        self.assertEqual(bench.evaluate({"answer": "3\\sqrt{2}"}, "\\boxed{2}"), 0.0)
+        # 2^5 is symbolic; a model that computes 32 must still mismatch on latex
+        # (gold is not a plain number, so numeric comparison is skipped).
+        self.assertEqual(bench.evaluate({"answer": "2^5"}, "\\boxed{32}"), 0.0)
+        # A LaTeX fraction gold vs. a bare number -> wrong.
+        self.assertEqual(bench.evaluate({"answer": "\\frac{3}{5}"}, "\\boxed{2}"), 0.0)
+        self.assertEqual(bench.evaluate({"answer": "\\frac{3}{5}"}, "42"), 0.0)
+
+    def test_math500_plain_numeric_gold_still_matches(self) -> None:
+        """Positive control: a plain numeric gold must still match a numeric
+        boxed prediction (the no-false-positive guard did not break real
+        numeric scoring)."""
+        bench = MATH500Benchmark(self.config, self.settings)
+        self.assertEqual(bench.evaluate({"answer": "42"}, "\\boxed{42}"), 1.0)
+        self.assertEqual(bench.evaluate({"answer": "3.14"}, "The result is \\boxed{3.14}."), 1.0)
+        # Comma-grouped numeric boxed still normalizes to the plain gold number.
+        self.assertEqual(bench.evaluate({"answer": "1000000"}, "\\boxed{1,000,000}"), 1.0)
+        # Wrong plain number -> 0.0
+        self.assertEqual(bench.evaluate({"answer": "42"}, "\\boxed{43}"), 0.0)
 
 
 if __name__ == "__main__":

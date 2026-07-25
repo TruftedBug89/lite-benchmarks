@@ -37,6 +37,36 @@ ROOT_DIR = Path(__file__).parent.resolve()
 WEB_DIR = ROOT_DIR / "web"
 CHARTS_DIR = ROOT_DIR / "charts"
 CUSTOM_MODELS_FILE = ROOT_DIR / "custom_models.json"
+CONFIG_FILE = ROOT_DIR / "config.yaml"
+
+
+def _configure_stdio() -> None:
+    """Force UTF-8 stdout/stderr so emoji and rich log output never crash on a
+    non-UTF-8 console (e.g. Windows cp1252) or when output is redirected to a
+    file/service. Without this, the very first ``print("✨ …")`` raises
+    ``UnicodeEncodeError`` and the server never starts on a default console."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
+_configure_stdio()
+
+
+def _abs(path: str | Path) -> Path:
+    """Resolve a configured path against the repo root.
+
+    All file access is anchored to ``ROOT_DIR`` (not the process CWD) so the
+    app behaves identically no matter which directory it is launched from."""
+    p = Path(path)
+    return p if p.is_absolute() else (ROOT_DIR / p)
+
+
+def _latest_results_path(config: Config) -> Path:
+    return _abs(config.settings.results_dir) / "latest.json"
+
 
 # Load .env from the repo root if present (does NOT override real env vars).
 # This is where users typically put LITE_BENCH_ALLOW_UNSAFE=1 and HF_TOKEN.
@@ -222,12 +252,14 @@ class DashboardEngine:
         self.state_lock = threading.RLock()
         self._stop_event = threading.Event()
         self._run_id: int = 0
+        self._log_counter: int = 0  # monotonic; lets the UI detect new log lines
 
     def _log_locked(self, msg: str) -> None:
         """Append a log entry. Caller must hold state_lock."""
         ts = time.strftime("%H:%M:%S")
         entry = f"[{ts}] {msg}"
         self.logs.append(entry)
+        self._log_counter += 1
         if len(self.logs) > 100:
             self.logs.pop(0)
 
@@ -256,10 +288,14 @@ class DashboardEngine:
                     st.status = "Stopped"
                     st.is_finished = True
 
-    def run_async(self, run_payload: dict, base_config: Config) -> None:
+    def run_async(self, run_payload: dict, base_config: Config) -> bool:
+        """Start a benchmark run in a background worker.
+
+        Returns False if a run is already in progress (so the caller can report
+        the conflict instead of silently no-oping)."""
         with self.state_lock:
             if self.is_running:
-                return
+                return False
             self.is_running = True
             self.stop_requested = False
             self._stop_event = threading.Event()
@@ -273,7 +309,21 @@ class DashboardEngine:
         self.logs = []
         self.log("🚀 Initializing benchmark run...")
 
-        # Parse model parameters from payload (no env_vars mutation allowed)
+        # Server-side model registry. The client may only *select* models that
+        # already exist in config.yaml or custom_models.json; ``api_base`` and
+        # ``api_key_env`` are taken from those server-side records and NEVER
+        # from the request payload. This closes a key-exfiltration hole where a
+        # (possibly cross-site) caller could point a resolved API key at an
+        # attacker-controlled ``api_base``.
+        registry: dict[str, dict] = {}
+        for cm in base_config.models:
+            registry[cm.id] = {"api_base": cm.api_base, "api_key_env": cm.api_key_env}
+        for cm in load_custom_models():
+            registry[str(cm.get("id", ""))] = {
+                "api_base": cm.get("api_base"),
+                "api_key_env": cm.get("api_key_env"),
+            }
+
         models_data = run_payload.get("models", [])
         models: list[ModelConfig] = []
         for m in models_data:
@@ -281,15 +331,20 @@ class DashboardEngine:
             name = str(m.get("name", mid)).strip() or mid
             thinking_effort = m.get("thinking_effort")
             max_tokens = m.get("max_tokens")
-            api_base = m.get("api_base")
-            api_key_env = m.get("api_key_env")
+            source = registry.get(mid, {})
+            api_base = source.get("api_base")
+            api_key_env = source.get("api_key_env")
+            try:
+                max_tokens_val = int(max_tokens) if max_tokens else None
+            except (TypeError, ValueError):
+                max_tokens_val = None
 
             models.append(
                 ModelConfig(
                     id=mid,
                     name=name,
                     thinking_effort=thinking_effort if thinking_effort else None,
-                    max_tokens=int(max_tokens) if max_tokens else None,
+                    max_tokens=max_tokens_val,
                     api_base=api_base if api_base else None,
                     api_key_env=api_key_env if api_key_env else None,
                     extra_params={},
@@ -342,8 +397,8 @@ class DashboardEngine:
             max_concurrent_models=user_settings.get(
                 "max_concurrent_models", base_config.settings.max_concurrent_models
             ),
-            results_dir=base_config.settings.results_dir,
-            charts_dir=base_config.settings.charts_dir,
+            results_dir=str(_abs(base_config.settings.results_dir)),
+            charts_dir=str(_abs(base_config.settings.charts_dir)),
             hf_token_env=base_config.settings.hf_token_env,
             allow_unsafe_code_execution=allow_unsafe,
         )
@@ -366,7 +421,7 @@ class DashboardEngine:
         def _worker():
             try:
                 callbacks = EngineCallbacksBridge(self)
-                existing = load_latest_results(self.current_config)
+                existing = load_latest_results(self.current_config, _latest_results_path(self.current_config))
                 self.results = run_engine(
                     config=self.current_config,
                     models=models,
@@ -393,6 +448,7 @@ class DashboardEngine:
 
         self.worker_thread = threading.Thread(target=_worker, daemon=True)
         self.worker_thread.start()
+        return True
 
     def get_status_dict(self) -> dict:
         elapsed = (
@@ -403,6 +459,10 @@ class DashboardEngine:
             model_states_json = {}
             for mname, s in self.states.items():
                 d = asdict(s)
+                # The full per-question detail list is unbounded and unused by
+                # the dashboard; dropping it keeps SSE frames small even on long
+                # runs (hundreds of questions × several benchmarks × models).
+                d.pop("questions", None)
                 d["accuracy"] = s.accuracy
                 model_states_json[mname] = d
 
@@ -411,6 +471,7 @@ class DashboardEngine:
                 "stop_requested": self.stop_requested,
                 "elapsed_seconds": round(elapsed, 1),
                 "logs": self.logs[-30:],
+                "logs_total": self._log_counter,
                 "models": model_states_json,
             }
 
@@ -451,7 +512,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
 
         if path == "/api/config":
             try:
-                config = load_config("config.yaml")
+                config = load_config(CONFIG_FILE)
             except Exception as e:
                 self._send_json({"error": f"Failed to load config: {e}"}, status=500)
                 return
@@ -511,8 +572,8 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
 
         if path == "/api/results":
             try:
-                config = load_config("config.yaml")
-                latest = load_latest_results(config)
+                config = load_config(CONFIG_FILE)
+                latest = load_latest_results(config, _latest_results_path(config))
                 self._send_json({"models": latest})
             except Exception as e:
                 self._send_json({"error": str(e)}, status=500)
@@ -580,20 +641,61 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
 
         self.send_error(404, "Not Found")
 
+    def _is_same_origin(self, origin: str) -> bool:
+        """True if an ``Origin`` header refers to the local dashboard itself."""
+        try:
+            host = (urlparse(origin).hostname or "").lower()
+        except ValueError:
+            return False
+        if host in ("127.0.0.1", "localhost", "::1"):
+            return True
+        our_host = (self.headers.get("Host") or "").split(":")[0].lower()
+        return bool(our_host) and host == our_host
+
     def do_POST(self) -> None:
         url = urlparse(self.path)
         path = url.path
 
-        content_length = int(self.headers.get("Content-Length", 0))
+        # --- Guard every mutating API endpoint against CSRF ---------------
+        # Requiring an explicit ``application/json`` Content-Type means a plain
+        # HTML form or ``text/plain`` cross-site POST cannot reach these routes
+        # (a cross-origin JSON POST triggers a CORS preflight we never grant),
+        # and the Origin check blocks the rest. Essential now that the dashboard
+        # can drive real API calls.
+        if path.startswith("/api/"):
+            ctype = self.headers.get("Content-Type", "")
+            if "application/json" not in ctype.lower():
+                self._send_json({"error": "Content-Type must be application/json."}, status=415)
+                return
+            origin = self.headers.get("Origin", "")
+            if origin and not self._is_same_origin(origin):
+                self._send_json({"error": "Cross-origin request rejected."}, status=403)
+                return
+
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            self._send_json({"error": "Invalid Content-Length."}, status=400)
+            return
+        if content_length > 5_000_000:
+            self._send_json({"error": "Payload too large."}, status=413)
+            return
         body = self.rfile.read(content_length) if content_length > 0 else b""
-        payload = json.loads(body.decode("utf-8")) if body else {}
+        try:
+            payload = json.loads(body.decode("utf-8")) if body else {}
+        except (ValueError, UnicodeDecodeError):
+            self._send_json({"error": "Invalid JSON body."}, status=400)
+            return
 
         if path == "/api/run":
-            if ENGINE.is_running:
+            try:
+                base_config = load_config(CONFIG_FILE)
+            except Exception as e:
+                self._send_json({"error": f"Failed to load config: {e}"}, status=500)
+                return
+            if not ENGINE.run_async(payload, base_config):
                 self._send_json({"error": "A benchmark run is already in progress."}, status=400)
                 return
-            base_config = load_config("config.yaml")
-            ENGINE.run_async(payload, base_config)
             self._send_json({"status": "started"})
             return
 
@@ -633,13 +735,14 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
 
         if path == "/api/reports":
             try:
-                config = load_config("config.yaml")
-                latest = load_latest_results(config)
+                config = load_config(CONFIG_FILE)
+                latest = load_latest_results(config, _latest_results_path(config))
                 if not latest:
                     self._send_json({"error": "No results found to generate reports."}, status=400)
                     return
-                chart_paths = generate_charts(latest, config, config.settings.charts_dir)
-                write_readme(latest, config, chart_paths)
+                charts_dir = _abs(config.settings.charts_dir)
+                chart_paths = generate_charts(latest, config, str(charts_dir))
+                write_readme(latest, config, chart_paths, path=str(ROOT_DIR / "README.md"))
                 self._send_json({"status": "success", "chart_paths": chart_paths})
             except Exception as e:
                 self._send_json({"error": f"Failed to generate reports: {e}"}, status=500)
@@ -659,9 +762,14 @@ def main() -> None:
         print(f"\033[91mWARNING: Binding to non-local address {args.host}. Ensure network access is secure!\033[0m")
 
     server_address = (args.host, args.port)
-    httpd = ThreadingHTTPServer(server_address, DashboardRequestHandler)
+    try:
+        httpd = ThreadingHTTPServer(server_address, DashboardRequestHandler)
+    except OSError as e:
+        sys.exit(f"❌ Cannot bind {args.host}:{args.port} — is the port already in use? ({e})")
 
-    url = f"http://{args.host}:{args.port}/"
+    # 0.0.0.0/:: are not navigable addresses in a browser; open loopback instead.
+    browser_host = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
+    url = f"http://{browser_host}:{args.port}/"
     print(f"✨ Lite Benchmarks Web Dashboard running at: {url}")
 
     if not args.no_browser:

@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -61,7 +62,17 @@ def _get_git_sha() -> str | None:
 def compute_question_hash(questions: list[dict]) -> str:
     """Compute sha1 hash of question prompts/ids to track exact benchmark sample state."""
     raw_str = "|".join(
-        str(q.get("question") or q.get("prompt") or q.get("id") or i)
+        str(
+            q.get("question")
+            or q.get("prompt")
+            or q.get("problem")
+            or q.get("problem_text")
+            or q.get("problem_description_main")
+            or q.get("problem_id")
+            or q.get("problemid")
+            or q.get("id")
+            or i
+        )
         for i, q in enumerate(questions)
     )
     return hashlib.sha1(raw_str.encode("utf-8")).hexdigest()[:12]
@@ -70,34 +81,44 @@ def compute_question_hash(questions: list[dict]) -> str:
 def aggregate(mdata: dict, config: Config) -> None:
     """Recompute summary rollups (scores, token totals) for a model entry in-place."""
     enabled_names = set(config.enabled_benchmarks().keys())
-    completed = [
+    # Benchmarks that were attempted (have a score field, even if null) — used
+    # for token/cost/throughput rollups.
+    attempted = [
         v for k, v in mdata.items()
         if k in enabled_names and isinstance(v, dict) and "score" in v
     ]
-
-    bench_scores = {k: mdata[k]["score"] for k in mdata if k in enabled_names and isinstance(mdata[k], dict) and "score" in mdata[k]}
+    # Only benchmarks with a real numeric score count toward averages. A
+    # fully-failed benchmark has score=None and is EXCLUDED (not a hard 0), so a
+    # provider outage for one benchmark no longer drags down the overall score.
+    bench_scores = {
+        k: mdata[k]["score"]
+        for k in mdata
+        if k in enabled_names
+        and isinstance(mdata[k], dict)
+        and isinstance(mdata[k].get("score"), (int, float))
+    }
     overall = config.overall_score(bench_scores)
 
     summary: dict = {
         "overall_score": round(overall, 4) if overall is not None else None,
-        "completed_benchmarks": len(completed),
-        "total_input_tokens": sum(r.get("input_tokens", 0) for r in completed),
-        "total_output_tokens": sum(r.get("output_tokens", 0) for r in completed),
-        "total_thinking_tokens": sum(r.get("thinking_tokens", 0) for r in completed),
-        "total_all_tokens": sum(r.get("total_tokens", 0) for r in completed),
+        "completed_benchmarks": len(bench_scores),
+        "total_input_tokens": sum(r.get("input_tokens", 0) for r in attempted),
+        "total_output_tokens": sum(r.get("output_tokens", 0) for r in attempted),
+        "total_thinking_tokens": sum(r.get("thinking_tokens", 0) for r in attempted),
+        "total_all_tokens": sum(r.get("total_tokens", 0) for r in attempted),
     }
 
-    total_cost = sum(r.get("total_cost_usd") for r in completed if r.get("total_cost_usd") is not None)
+    total_cost = sum(r.get("total_cost_usd") for r in attempted if r.get("total_cost_usd") is not None)
     summary["total_cost_usd"] = round(total_cost, 6) if total_cost > 0 else None
 
     for cat in config.categories:
         cat_s = config.category_score(bench_scores, cat)
         summary[f"{cat}_score"] = round(cat_s, 4) if cat_s is not None else None
 
-    tps_vals = [r.get("avg_tokens_per_second") for r in completed if r.get("avg_tokens_per_second") is not None]
+    tps_vals = [r.get("avg_tokens_per_second") for r in attempted if r.get("avg_tokens_per_second") is not None]
     summary["avg_tokens_per_second"] = round(sum(tps_vals) / len(tps_vals), 2) if tps_vals else None
 
-    time_vals = [r.get("avg_time_ms") for r in completed if r.get("avg_time_ms") is not None]
+    time_vals = [r.get("avg_time_ms") for r in attempted if r.get("avg_time_ms") is not None]
     summary["avg_time_ms"] = round(sum(time_vals) / len(time_vals), 1) if time_vals else None
 
     mdata["summary"] = summary
@@ -146,13 +167,35 @@ def save_results(
         "models": results,
     }
 
-    # Write atomically
+    # Write atomically: temp file in the target dir + os.replace (same volume,
+    # so no cross-drive rename failure on Windows). Clean up the temp file on any
+    # error, and retry the replace a few times in case Windows has the target
+    # briefly locked (editor/antivirus/indexer) rather than aborting the run.
     dir_path = target_path.parent
-    with tempfile.NamedTemporaryFile("w", dir=dir_path, delete=False, encoding="utf-8") as tf:
-        json.dump(payload, tf, indent=2, ensure_ascii=False)
-        temp_name = tf.name
+    temp_name = None
+    try:
+        with tempfile.NamedTemporaryFile("w", dir=dir_path, delete=False, encoding="utf-8") as tf:
+            json.dump(payload, tf, indent=2, ensure_ascii=False)
+            temp_name = tf.name
 
-    os.replace(temp_name, target_path)
+        last_err: Exception | None = None
+        for _ in range(5):
+            try:
+                os.replace(temp_name, target_path)
+                temp_name = None  # moved successfully; nothing left to clean up
+                break
+            except PermissionError as e:
+                last_err = e
+                time.sleep(0.2)
+        else:
+            if last_err is not None:
+                raise last_err
+    finally:
+        if temp_name is not None:
+            try:
+                os.unlink(temp_name)
+            except OSError:
+                pass
     return str(target_path)
 
 
@@ -166,6 +209,10 @@ def load_latest_results(config: Config, path: str | Path = "results/latest.json"
         data = json.loads(p.read_text(encoding="utf-8"))
     except Exception as e:
         console.print(f"[yellow]Warning: Failed to parse {path}: {e}[/yellow]")
+        return {}
+
+    if not isinstance(data, dict):
+        console.print(f"[yellow]Warning: {path} is not a results object; ignoring it.[/yellow]")
         return {}
 
     sv = data.get("schema_version")

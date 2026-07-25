@@ -41,17 +41,10 @@ def _matches_relation(count: int, relation: object, target: object) -> bool:
     return False
 
 
-def _paragraphs(value: str) -> list[str] | None:
-    if "***" in value:
-        raw_paragraphs = re.split(r"\s?\*\*\*\s?", value)
-    else:
-        raw_paragraphs = re.split(r"\n\s*\n", value)
-    for index, paragraph in enumerate(raw_paragraphs):
-        if not paragraph.strip():
-            if index in (0, len(raw_paragraphs) - 1):
-                continue
-            return None
-    return [paragraph for paragraph in raw_paragraphs if paragraph.strip()]
+def _blank_line_paragraphs(value: str) -> list[str]:
+    """Paragraphs separated by blank lines — the official splitter used by the
+    ``length_constraints:nth_paragraph_first_word`` instruction."""
+    return [p for p in re.split(r"\n\s*\n", value) if p.strip()]
 
 
 def verify_number_words(response: str, **kwargs: Any) -> bool:
@@ -67,16 +60,22 @@ def verify_number_sentences(response: str, **kwargs: Any) -> bool:
 
 
 def verify_number_paragraphs(response: str, **kwargs: Any) -> bool:
-    paragraphs = _paragraphs(response)
-    return paragraphs is not None and len(paragraphs) == kwargs.get("num_paragraphs")
+    target = kwargs.get("num_paragraphs")
+    if not isinstance(target, int):
+        return False
+    # Official IFEval separates paragraphs with the markdown divider "***" for
+    # this instruction (NOT blank lines), so a response with only blank-line
+    # breaks counts as a single paragraph.
+    return len(re.split(r"\s?\*\*\*\s?", response)) == target
 
 
 def verify_nth_paragraph_first_word(response: str, **kwargs: Any) -> bool:
-    paragraphs = _paragraphs(response)
     nth = kwargs.get("nth_paragraph")
     first_word = kwargs.get("first_word")
-    if paragraphs is None or not isinstance(nth, int) or not isinstance(first_word, str):
+    if not isinstance(nth, int) or not isinstance(first_word, str):
         return False
+    # Official IFEval splits paragraphs on blank lines for this instruction.
+    paragraphs = _blank_line_paragraphs(response)
     if nth < 1 or nth > len(paragraphs):
         return False
     words = paragraphs[nth - 1].split()
@@ -105,7 +104,11 @@ def verify_number_bullet_lists(response: str, **kwargs: Any) -> bool:
     expected = kwargs.get("num_bullets")
     if not isinstance(expected, int):
         return False
-    bullets = re.findall(r"^\s*(?:[*+-]|\d+[\.\)])\s+.*$", response, flags=re.MULTILINE)
+    # Official IFEval counts only "* " and "- " bullets (no "+", no ordered
+    # "1." lists). The first regex requires a non-"*" after "*" so "**bold**"
+    # is not miscounted as a bullet.
+    bullets = re.findall(r"^\s*\*[^\*].*$", response, flags=re.MULTILINE)
+    bullets += re.findall(r"^\s*-.*$", response, flags=re.MULTILINE)
     return len(bullets) == expected
 
 
@@ -214,7 +217,14 @@ def verify_response_language(response: str, **kwargs: Any) -> bool:
 
 
 def verify_two_responses(response: str, **kwargs: Any) -> bool:
-    return "******" in response
+    # Official IFEval: exactly one "******" divider, yielding two non-empty
+    # responses that differ from each other.
+    separator = "******"
+    if response.count(separator) != 1:
+        return False
+    left, right = response.split(separator)
+    left, right = left.strip(), right.strip()
+    return bool(left) and bool(right) and left != right
 
 
 def verify_repeat_prompt(response: str, **kwargs: Any) -> bool:
@@ -228,10 +238,10 @@ def verify_end_checker(response: str, **kwargs: Any) -> bool:
 
 
 def verify_quotation(response: str, **kwargs: Any) -> bool:
+    # Official IFEval requires the whole response wrapped in double quotes
+    # (single quotes don't count) and longer than one character.
     value = response.strip()
-    return (value.startswith('"') and value.endswith('"')) or (
-        value.startswith("'") and value.endswith("'")
-    )
+    return len(value) > 1 and value.startswith('"') and value.endswith('"')
 
 
 def verify_capital_word_frequency(response: str, **kwargs: Any) -> bool:

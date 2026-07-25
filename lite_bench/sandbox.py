@@ -1,15 +1,24 @@
 """Sandboxed execution of model-generated code.
 
-Two layers of defense, designed to not interfere with legitimate benchmark
+Three layers of defense, designed to not interfere with legitimate benchmark
 solutions (which are pure computation and need no OS/file/network access):
 
 1. AST static scan of the *untrusted* (model-generated) portion. Dangerous
-   imports, builtin calls, and dunder escape hatches are rejected before
-   anything runs. The dataset-provided test harness is trusted and unscanned.
+   imports, builtin calls, dunder-escape attribute access, and dunder-string
+   attribute lookups are rejected before anything runs. The dataset-provided
+   test harness is trusted and unscanned. THIS is the layer that stops the
+   object-graph crawl (().__class__.__subclasses__()) which would otherwise
+   reach the Windows sandbox's own Win32 handles (Layer 3).
 2. Hardened subprocess. The child gets a minimal allow-listed environment
-   (no API keys, tokens, or credentials), a fresh temporary working
-   directory that is deleted afterwards, bytecode writes disabled, and a
-   wall-clock timeout.
+   (no API keys, tokens, or credentials), a fresh temporary working directory
+   that is deleted afterwards, bytecode writes disabled, and a wall-clock
+   timeout. The opt-in gate (allow_execution) is enforced here so direct
+   callers can never bypass it.
+3. Windows Job Object confinement (windows_sandbox.py). On Windows the spawned
+   child is assigned to a fresh Job Object whose ActiveProcessLimit blocks
+   grandchildren and whose UI restrictions block clipboard/desktop access - an
+   OS-level backstop in case a model slips something past the AST scan. On
+   other platforms only Layers 1+2 apply.
 
 This is not a perfect security boundary against a determined adversary
 writing handcrafted exploit code, but it reliably prevents the realistic
@@ -32,7 +41,9 @@ import tempfile
 # ---------------------------------------------------------------------------
 
 # Modules granting access to the OS, filesystem, network, processes,
-# dynamic imports, or object-graph/frame escape hatches.
+# dynamic imports, or object-graph/frame escape hatches. operator/types/copy
+# are intentionally NOT blocked (common in scientific code) - the dunder crawl
+# they'd enable is stopped at the attribute layer (_BLOCKED_ATTRS) below instead.
 _BLOCKED_MODULES = frozenset(
     {
         # OS / filesystem
@@ -50,6 +61,7 @@ _BLOCKED_MODULES = frozenset(
         # dynamic import / code loading / introspection escapes
         "importlib", "runpy", "code", "codeop", "inspect", "traceback",
         "pdb", "bdb", "builtins", "linecache",
+        "gc", "ast", "pkgutil", "zipimport", "site", "imp", "_thread",
         # (de)serialization that can execute code or touch files
         "pickle", "shelve", "marshal", "dill", "dbm", "sqlite3",
         # archives (direct file writes)
@@ -60,17 +72,23 @@ _BLOCKED_MODULES = frozenset(
         "pynput", "pyperclip",
         # GUI
         "tkinter", "turtle",
+        # the harness itself + the Windows sandbox module: importing either
+        # hands untrusted code live Win32 handles / the scan rules -> self-escape.
+        "lite_bench", "windows_sandbox",
     }
 )
 
 # Builtins that must never be called or referenced by untrusted code:
 # file handles, dynamic execution, and attribute/global-namespace tricks
-# used to bypass the import blocklist.
+# used to bypass the import blocklist. Note getattr/hasattr/setattr/delattr/
+# vars are blocked OUTRIGHT - any call is rejected - which also closes the
+# name-based dunder escape (getattr(o, "__subclasses__")) at the root, since
+# the attribute is never resolved through them in the first place.
 _BLOCKED_BUILTINS = frozenset(
     {
         "open", "eval", "exec", "compile", "__import__", "input",
-        "getattr", "setattr", "delattr", "globals", "locals", "vars",
-        "breakpoint", "exit", "quit",
+        "getattr", "hasattr", "setattr", "delattr", "globals", "locals",
+        "vars", "breakpoint", "exit", "quit",
     }
 )
 
@@ -188,15 +206,78 @@ def _sandbox_env(sandbox_dir: str) -> dict[str, str]:
     return env
 
 
+def _run_child(
+    script_path: str, sandbox_dir: str, env: dict[str, str], timeout: int
+) -> tuple[bool, list[str]]:
+    """Spawn the sandboxed interpreter, confined by a Windows Job Object when
+    available. Process isolation (own cwd/env/exit code, clean kill on timeout)
+    is preserved on every platform; the Job Object only adds OS-level
+    grandchild-process and UI containment on Windows as defense in depth. Any
+    failure to create/assign the job degrades gracefully to a plain
+    subprocess - never fatal to the benchmark run.
+    """
+    child_job = None
+    if os.name == "nt":
+        try:
+            from windows_sandbox import create_child_job
+
+            child_job = create_child_job()
+        except Exception:
+            child_job = None
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, script_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=sandbox_dir,
+            env=env,
+        )
+        if child_job and child_job.handle:
+            # Assign BEFORE the child can do real work. There is a tiny race
+            # window, but Python startup (~tens of ms) dominates, and the AST
+            # scan already blocks the spawn modules a model realistically emits.
+            handle = getattr(proc, "_handle", None)
+            if handle:
+                child_job.assign(handle)
+        try:
+            proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            try:
+                proc.communicate(timeout=5)
+            except Exception:
+                pass
+            return False, ["execution timed out"]
+        return proc.returncode == 0, []
+    finally:
+        if child_job is not None:
+            child_job.close()
+
+
 def execute_sandboxed(
-    untrusted_code: str, trusted_code: str, timeout: int
+    untrusted_code: str,
+    trusted_code: str,
+    timeout: int,
+    *,
+    allow_execution: bool = False,
 ) -> tuple[bool, list[str]]:
     """Run untrusted model code + trusted test harness in a sandbox.
 
-    Returns (passed, violations). ``passed`` is True only if the static
-    scan found no violations and the combined script exited with code 0.
-    ``violations`` lists the scan rejections (empty when execution ran).
+    The opt-in gate lives HERE, at the sandbox layer: ``allow_execution`` must
+    be True (threaded from ``settings.allow_unsafe_code_execution``) or nothing
+    runs. This means a direct ``evaluate()`` call - e.g. from a test or a future
+    caller that skips the engine's bench-level skip - can never execute model
+    code by accident; it fails closed instead.
+
+    Returns (passed, violations). ``passed`` is True only if execution was
+    permitted, the static scan found no violations, and the combined script
+    exited with code 0. ``violations`` lists the scan rejections or the
+    opt-out reason (empty when execution actually ran).
     """
+    if not allow_execution:
+        return False, ["code execution is disabled (allow_unsafe_code_execution not enabled)"]
+
     violations = scan_code(untrusted_code)
     if violations:
         return False, violations
@@ -212,15 +293,7 @@ def execute_sandboxed(
         script_path = os.path.join(sandbox_dir, "run.py")
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(script)
-        result = subprocess.run(
-            [sys.executable, script_path],
-            capture_output=True,
-            timeout=timeout,
-            text=True,
-            cwd=sandbox_dir,
-            env=_sandbox_env(sandbox_dir),
-        )
-        return result.returncode == 0, []
+        return _run_child(script_path, sandbox_dir, _sandbox_env(sandbox_dir), timeout)
     except subprocess.TimeoutExpired:
         return False, ["execution timed out"]
     except Exception as e:

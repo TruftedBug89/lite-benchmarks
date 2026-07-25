@@ -14,4 +14,11 @@ Thumbs.db
 .ruff_cache/
 .mypy_cache/
 results/results_*.json
+results/latest.json
+results/archive/
 custom_models.json
+
+# Generated charts & sandbox scratch — regenerated on demand, never tracked.
+charts/*.png
+sandbox_workspace/
+*.wsb

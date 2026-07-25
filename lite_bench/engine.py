@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -17,6 +18,34 @@ from .providers import GenerationResult, generate
 from .results_store import aggregate, compute_question_hash, is_fatal_error, save_results
 
 console = Console()
+
+# Permanent client/context errors that will never succeed on retry. Auth/quota
+# errors are handled separately as fatal (they abort the whole model). Word
+# boundaries keep e.g. "4000 tokens" from matching the "400" status code.
+_NON_RETRYABLE_STATUS = re.compile(r"\b(?:400|404|405|406|409|410|413|415|422)\b")
+_NON_RETRYABLE_HINTS = (
+    "context_length_exceeded",
+    "maximum context length",
+    "context length",
+    "context_window",
+    "too many tokens",
+    "reduce the length",
+    "content_filter",
+    "content_policy",
+    "content policy",
+    "responsibleaipolicy",
+    "invalid_request_error",
+    "invalid request",
+)
+
+
+def _is_retryable_error(e: Exception) -> bool:
+    """False for errors that can never succeed (bad request, prompt too long,
+    content filter, refusals) so we don't burn retries + backoff on them."""
+    s = str(e).lower()
+    if _NON_RETRYABLE_STATUS.search(s):
+        return False
+    return not any(hint in s for hint in _NON_RETRYABLE_HINTS)
 
 
 class EngineCallbacks(Protocol):
@@ -82,6 +111,12 @@ def process_question(
             gen_error = e
             if is_fatal_error(e):
                 raise FatalModelError(f"Fatal error for {model.name}: {e}") from e
+
+            # Permanent errors (bad request, context too long, content filter)
+            # will never succeed — stop retrying immediately instead of burning
+            # max_retries with backoff on every such question.
+            if not _is_retryable_error(e):
+                break
 
             if attempt < max_retries - 1:
                 err_str = str(e).lower()
@@ -284,14 +319,18 @@ def run_engine(
                         f"Aborting remaining benchmarks for {model.name} due to fatal error",
                     )
 
-                # Summarize benchmark
+                # Summarize benchmark. When EVERY question was a provider failure
+                # (total_count == 0) there is no data, so record score=None rather
+                # than 0.0 — a fully-failed benchmark must be excluded from the
+                # category/overall averages, not counted as a hard zero (which the
+                # per-benchmark table already shows as "N/A").
                 scored = [d for d in details if d["status"] in ("success", "eval_error")]
                 correct_count = sum(d["score"] for d in scored)
                 total_count = len(scored)
-                score = (correct_count / total_count) if total_count > 0 else 0.0
+                score = (correct_count / total_count) if total_count > 0 else None
 
                 b_summary: dict = {
-                    "score": round(score, 4),
+                    "score": round(score, 4) if score is not None else None,
                     "correct": correct_count,
                     "total": total_count,
                     "question_hash": q_hash,
@@ -319,9 +358,17 @@ def run_engine(
                 with results_lock:
                     mdata = results[model.name]
                     mdata[bench_name] = b_summary
-                    aggregate(mdata, config)
-                    # Checkpoint save
-                    save_results(results, config, settings.results_dir, "latest.json")
+                    # A checkpoint/persistence failure (read-only or full results dir,
+                    # a transient Windows file lock) must NOT abort the model's
+                    # remaining benchmarks — record the score, log, and continue.
+                    try:
+                        aggregate(mdata, config)
+                        save_results(results, config, settings.results_dir, "latest.json")
+                    except Exception as persist_err:
+                        callbacks.on_event(
+                            model.name,
+                            f"Warning: checkpoint save failed after {bench_name}: {persist_err}",
+                        )
                 callbacks.on_benchmark_done(model.name, bench_name, b_summary)
 
         except Exception as model_err:

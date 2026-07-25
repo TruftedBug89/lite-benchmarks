@@ -136,6 +136,9 @@ __all__ = [
     "SandboxPolicy",
     "SandboxResult",
     "run_in_sandbox",
+    "run_source_in_sandbox",
+    "ChildJob",
+    "create_child_job",
 ]
 
 if os.name != "nt":
@@ -350,7 +353,10 @@ _DEFAULT_BLOCKED_MODULES = frozenset({
     # process creation
     "subprocess", "multiprocessing", "_multiprocessing",
     # introspection / process tooling
-    "inspect", "psutil", "pdb",
+    "inspect", "psutil", "pdb", "importlib", "runpy", "gc",
+    # THIS module: importing it hands untrusted code our own Win32 handles
+    # (kernel32/advapi32) and a live ctypes - a direct sandbox self-escape.
+    "windows_sandbox",
 })
 
 
@@ -383,6 +389,13 @@ class SandboxPolicy:
     extra_read_paths: tuple = ()
     extra_blocked_modules: frozenset = frozenset()
     redirect_temp: bool = True
+    # When True, os.environ is swapped to only the allow-listed variables for
+    # the duration of the run (API keys / tokens never visible to untrusted
+    # code), then restored on the way out. env_allowlist defaults to empty =>
+    # scrub everything; PATH/SystemRoot are not needed in-process because
+    # imports resolve via sys.path, not env, and subprocesses are blocked.
+    scrub_env: bool = False
+    env_allowlist: tuple = ()
 
     use_job: bool = True
     use_token: bool = True
@@ -588,6 +601,76 @@ class _JobGuard:
         self.engaged = False
 
 
+# ---------------------------------------------------------------------------
+# Child confinement: a fresh Job Object for one spawned sandbox subprocess.
+# Distinct from _JobGuard (which ties the harness itself to a process-wide
+# job): a ChildJob is created per child process and freed when it exits, so
+# the harness keeps its normal ability to spawn processes.
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ChildJob:
+    """Handle to a Job Object created to confine a spawned sandbox child.
+
+    Limits are chosen to harmlessly constrain the child (no grandchild
+    processes, no UI/clipboard/desktop access) WITHOUT memory/CPU caps that
+    could let the kernel terminate the offender - unnecessary given the
+    subprocess timeout. ``handle`` is None on failure; callers fall back to an
+    unconfined child (defense in depth, never fatal).
+    """
+    handle: int | None
+    note: str = ""
+
+    def assign(self, process_handle: int) -> bool:
+        if not self.handle:
+            return False
+        if not kernel32.AssignProcessToJobObject(self.handle, process_handle):
+            self.note = str(_winerr("AssignProcessToJobObject"))
+            return False
+        return True
+
+    def close(self) -> None:
+        if self.handle:
+            kernel32.CloseHandle(self.handle)
+            self.handle = None
+
+
+def create_child_job(*, limit_child_processes: bool = True,
+                     restrict_ui: bool = True) -> ChildJob:
+    """Create a fresh Job Object suitable for confining one spawned child.
+
+    The job starts empty (the harness is NOT a member), so a child assigned to
+    it becomes its single active process; with ActiveProcessLimit=1 the kernel
+    then denies every CreateProcess the child attempts - i.e. model code that
+    slips past the AST scan still cannot launch grandchildren. UI restrictions
+    block clipboard/desktop/window-handle access. Both are best-effort: on any
+    failure callers run the child unconfined rather than abort the benchmark.
+    """
+    h = kernel32.CreateJobObjectW(None, None)
+    if not h:
+        return ChildJob(handle=None, note=str(_winerr("CreateJobObjectW")))
+    info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+    flags = 0
+    if limit_child_processes:
+        flags |= JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+        info.BasicLimitInformation.ActiveProcessLimit = 1
+    info.BasicLimitInformation.LimitFlags = flags
+    if not kernel32.SetInformationJobObject(
+            h, JobObjectExtendedLimitInformation,
+            ctypes.byref(info), ctypes.sizeof(info)):
+        note = str(_winerr("SetInformationJobObject(extended)"))
+        kernel32.CloseHandle(h)
+        return ChildJob(handle=None, note=note)
+    if restrict_ui:
+        ui = JOBOBJECT_BASIC_UI_RESTRICTIONS(_JOB_OBJECT_UILIMIT_ALL)
+        if not kernel32.SetInformationJobObject(
+                h, JobObjectBasicUIRestrictions,
+                ctypes.byref(ui), ctypes.sizeof(ui)):
+            # UI restriction is best-effort; keep the job with the proc limit.
+            return ChildJob(handle=h, note=str(_winerr("SetInformationJobObject(ui)")))
+    return ChildJob(handle=h)
+
+
 # ===========================================================================
 # Layer 2 - restricted token guard (per worker thread)
 # ===========================================================================
@@ -713,6 +796,7 @@ class _PythonHookGuard:
         self._saved_modules: dict = {}
         self._blocker = None
         self._temp_state: tuple | None = None
+        self._env_state: dict | None = None
         self.blocked_modules = frozenset(
             _DEFAULT_BLOCKED_MODULES | set(policy.extra_blocked_modules))
 
@@ -938,6 +1022,19 @@ class _PythonHookGuard:
             os.environ["TEMP"] = os.environ["TMP"] = os.environ["TMPDIR"] = tmp_root
             tempfile.tempdir = tmp_root
 
+        # --- environment scrub ---
+        # Snapshot the full environment, then pare os.environ down to the
+        # allow-list so untrusted code cannot read API keys/tokens/credentials
+        # through os.environ. Restored bit-for-bit in remove().
+        if self.policy.scrub_env:
+            self._env_state = dict(os.environ)
+            keep = {
+                k: v for k, v in self._env_state.items()
+                if k in self.policy.env_allowlist
+            }
+            os.environ.clear()
+            os.environ.update(keep)
+
     # -- removal -------------------------------------------------------------
     def remove(self) -> None:
         # Neutralize any tracer the sandboxed code may have armed via some
@@ -967,6 +1064,11 @@ class _PythonHookGuard:
             self._blocker = None
         sys.modules.update(self._saved_modules)
         self._saved_modules.clear()
+
+        if self._env_state is not None:
+            os.environ.clear()
+            os.environ.update(self._env_state)
+            self._env_state = None
 
         if self._temp_state is not None:
             te, tmp, tmpdir, tdir = self._temp_state
@@ -1126,12 +1228,52 @@ def run_in_sandbox(func_to_test: Callable, *args,
     finally:
         result.peak_working_set_bytes = _peak_working_set()
         # Teardown order matters: only strip restrictions once the untrusted
-        # thread is provably finished (the hung path returns early above).
-        if hooks is not None:
-            hooks.remove()
-        if job is not None:
-            job.relax()
-        _SANDBOX_LOCK.release()
+        # thread is provably finished. On the thread_hung path we LEAVE every
+        # restriction engaged (and the sandbox lock held) so the runaway stays
+        # confined; the caller must terminate this process before reusing it.
+        # NB: the hung path's `return result` runs this finally too, so the
+        # guard below is what makes fail-closed actually work - previously the
+        # finally stripped the hooks/job while the worker thread kept running.
+        if not result.thread_hung:
+            if hooks is not None:
+                hooks.remove()
+            if job is not None:
+                job.relax()
+            _SANDBOX_LOCK.release()
+
+
+def run_source_in_sandbox(source: str, timeout: float | None = None,
+                          policy: SandboxPolicy | None = None) -> SandboxResult:
+    """Exec a source STRING under all sandbox layers.
+
+    Unlike ``run_in_sandbox`` (which takes a trusted callable), this consumes
+    raw source: it MUST already have passed the AST static scan in
+    ``lite_bench.sandbox`` (or equivalent), which blocks the dunder /
+    object-graph crawl that would otherwise reach this module's own Win32
+    handles (kernel32/advapi32). The exec namespace is a throwaway dict; the
+    dangerous builtins it sees are the hook-replaced ones from Layer 3.
+
+    ``SystemExit`` is interpreted as a script exit code, mirroring a
+    subprocess returncode (0/None -> ok, nonzero -> not ok) so harnesses that
+    signal pass/fail via ``sys.exit()`` behave like the subprocess path.
+    """
+    if policy is None:
+        policy = SandboxPolicy(
+            root_dir=os.path.join(os.getcwd(), "sandbox_workspace"),
+            scrub_env=True,
+        )
+
+    def _exec_source() -> None:
+        glo = {"__name__": "__main__", "__builtins__": builtins}
+        exec(compile(source, "<sandbox>", "exec"), glo)
+
+    res = run_in_sandbox(_exec_source, timeout=timeout, policy=policy)
+    exc = res.exception
+    if isinstance(exc, SystemExit):
+        # Controlled script exit: not a sandbox fault.
+        res.exception = None
+        res.ok = (not res.timed_out) and (exc.code in (0, None))
+    return res
 
 
 # ===========================================================================

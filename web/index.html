@@ -401,14 +401,18 @@
   const rowNodesMap = new Map();
   const sparklineHistories = new Map();
   let throughputHistory = [];
-  let lastLogCount = 0;
+  let lastLogTotal = 0;
 
   async function loadConfig() {
     try {
       const res = await fetch('/api/config');
       configData = await res.json();
       renderBenchmarks();
-    } catch (e) { console.error("Failed to load config:", e); }
+    } catch (e) {
+      console.error("Failed to load config:", e);
+      const list = document.getElementById('benchmarks-list');
+      if (list) list.innerHTML = '<div style="font-size:0.8rem; color:var(--accent-rose); padding:0.5rem;">Failed to load config from the server.</div>';
+    }
   }
 
   async function loadSavedModels() {
@@ -477,16 +481,25 @@
 
   function renderSavedChips() {
     const container = document.getElementById('saved-chips');
+    container.innerHTML = '';
     if (savedModels.length === 0) {
       container.innerHTML = '<span style="font-size:0.75rem; color:var(--text-dim);">No saved models yet.</span>';
       return;
     }
-    container.innerHTML = savedModels.map(m => `
-      <span class="chip" onclick="addFromSaved('${escapeAttr(m.id)}')">
-        ${escapeHtml(m.name)}
-        <span class="chip-x" onclick="event.stopPropagation(); deleteSavedModel('${escapeAttr(m.id)}')">&times;</span>
-      </span>
-    `).join('');
+    // Build chips via the DOM (not inline onclick with string interpolation) so
+    // a crafted model id can never inject script.
+    savedModels.forEach(m => {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.textContent = m.name;
+      chip.addEventListener('click', () => addFromSaved(m.id));
+      const x = document.createElement('span');
+      x.className = 'chip-x';
+      x.innerHTML = '&times;';
+      x.addEventListener('click', (e) => { e.stopPropagation(); deleteSavedModel(m.id); });
+      chip.appendChild(x);
+      container.appendChild(chip);
+    });
   }
 
   // The same model id may appear multiple times with different thinking
@@ -576,7 +589,7 @@
       const data = await res.json();
       savedModels = data.models || [];
       renderSavedChips();
-    } catch (e) { console.error(e); }
+    } catch (e) { alert("Failed to delete saved model."); console.error(e); }
   }
 
   function showCustomModelModal() { document.getElementById('custom-model-modal').classList.add('active'); }
@@ -615,7 +628,7 @@
         const data = await res.json();
         savedModels = data.models || [];
         renderSavedChips();
-      } catch (e) { console.error(e); }
+      } catch (e) { alert("Failed to save model."); console.error(e); }
     }
 
     document.getElementById('modal-model-id').value = '';
@@ -660,7 +673,7 @@
         const err = await res.json();
         alert(err.error || "Failed to start run.");
       }
-    } catch (e) { console.error(e); }
+    } catch (e) { alert("Failed to contact the server. Is it running?"); console.error(e); }
   }
 
   async function stopRun() {
@@ -669,16 +682,18 @@
     document.getElementById('start-btn').style.display = 'inline-flex';
     document.getElementById('stop-btn').style.display = 'none';
     isRunning = false;
-    await fetch('/api/stop', { method: 'POST' });
+    try {
+      await fetch('/api/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    } catch (e) { console.error("Failed to contact server:", e); }
   }
 
   async function generateReports() {
     try {
-      const res = await fetch('/api/reports', { method: 'POST' });
+      const res = await fetch('/api/reports', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
       const data = await res.json();
       if (res.ok) alert("Reports generated successfully!");
       else alert(data.error || "Error generating reports.");
-    } catch (e) { console.error(e); }
+    } catch (e) { alert("Failed to contact the server. Is it running?"); console.error(e); }
   }
 
   function initStream() {
@@ -709,10 +724,14 @@
 
     if (status.logs && status.logs.length > 0) {
       const logBox = document.getElementById('system-log-box');
-      if (status.logs.length !== lastLogCount) {
+      // The server only sends the last 30 lines, so `logs.length` freezes at 30
+      // on long runs. Key re-render on the monotonic `logs_total` counter so new
+      // lines always show up.
+      const logTotal = (status.logs_total != null) ? status.logs_total : status.logs.length;
+      if (logTotal !== lastLogTotal) {
         logBox.innerHTML = status.logs.map(l => `<div class="log-line">${escapeHtml(l)}</div>`).join('');
         logBox.scrollTop = logBox.scrollHeight;
-        lastLogCount = status.logs.length;
+        lastLogTotal = logTotal;
       }
     }
 
@@ -721,7 +740,6 @@
   }
 
   function escapeHtml(str) { return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-  function escapeAttr(str) { return String(str).replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
 
   function renderModelCards(states) {
     const grid = document.getElementById('live-cards-grid');

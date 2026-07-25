@@ -10,6 +10,34 @@ from typing import Any
 
 import yaml
 
+# Documented thinking_effort values (see config.yaml). Validated so a typo like
+# "hig" fails fast at load time instead of being retried per-question per-benchmark.
+_VALID_THINKING_EFFORTS = frozenset(
+    {"max", "xhigh", "ultracode", "high", "medium", "mid", "low", "min"}
+)
+_MODEL_KEYS = frozenset(
+    {"id", "name", "thinking_effort", "max_tokens", "api_base", "api_key_env", "extra_params"}
+)
+_BENCHMARK_KEYS = frozenset(
+    {"enabled", "dataset", "num_samples", "split", "subset", "revision"}
+)
+_SETTINGS_KEYS = frozenset(
+    {
+        "seed",
+        "max_tokens",
+        "temperature",
+        "request_timeout",
+        "code_exec_timeout",
+        "max_retries",
+        "max_concurrency",
+        "max_concurrent_models",
+        "results_dir",
+        "charts_dir",
+        "hf_token_env",
+        "allow_unsafe_code_execution",
+    }
+)
+
 
 @dataclass(frozen=True)
 class ModelConfig:
@@ -76,7 +104,9 @@ class Config:
 
     def category_score(self, bench_scores: Mapping[str, float], category: str) -> float | None:
         scores = [
-            bench_scores[name] for name in self.categories.get(category, []) if name in bench_scores
+            bench_scores[name]
+            for name in self.categories.get(category, [])
+            if name in bench_scores and isinstance(bench_scores[name], (int, float))
         ]
         return sum(scores) / len(scores) if scores else None
 
@@ -135,11 +165,19 @@ def load_config(path: str | Path = "config.yaml") -> Config:
     models: list[ModelConfig] = []
     for index, value in enumerate(raw_models):
         item = _mapping(value, f"models[{index}]")
+        unknown_model_keys = set(item.keys()) - _MODEL_KEYS
+        if unknown_model_keys:
+            raise ValueError(f"models[{index}] has unknown keys: {sorted(unknown_model_keys)}")
         model_id = _string(item.get("id"), f"models[{index}].id")
         name = _string(item.get("name", model_id), f"models[{index}].name")
         thinking_effort = item.get("thinking_effort")
         if thinking_effort is not None:
             thinking_effort = _string(thinking_effort, f"models[{index}].thinking_effort")
+            if thinking_effort.lower() not in _VALID_THINKING_EFFORTS:
+                raise ValueError(
+                    f"models[{index}].thinking_effort must be one of "
+                    f"{sorted(_VALID_THINKING_EFFORTS)} (got {thinking_effort!r})."
+                )
         max_tokens_val = item.get("max_tokens")
         if max_tokens_val is not None:
             max_tokens_val = _positive_int(max_tokens_val, f"models[{index}].max_tokens")
@@ -174,6 +212,11 @@ def load_config(path: str | Path = "config.yaml") -> Config:
     for name, value in raw_benchmarks.items():
         benchmark_name = _string(name, "benchmark name")
         item = _mapping(value, f"benchmarks.{benchmark_name}")
+        unknown_bench_keys = set(item.keys()) - _BENCHMARK_KEYS
+        if unknown_bench_keys:
+            raise ValueError(
+                f"benchmarks.{benchmark_name} has unknown keys: {sorted(unknown_bench_keys)}"
+            )
         enabled = item.get("enabled", True)
         if not isinstance(enabled, bool):
             raise ValueError(f"benchmarks.{benchmark_name}.enabled must be a boolean.")
@@ -217,9 +260,15 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         categories[category_name] = members
 
     raw_settings = _mapping(raw.get("settings", {}), "settings")
+    unknown_settings_keys = set(raw_settings.keys()) - _SETTINGS_KEYS
+    if unknown_settings_keys:
+        raise ValueError(f"settings has unknown keys: {sorted(unknown_settings_keys)}")
     temperature = _number(raw_settings.get("temperature", 0.0), "settings.temperature")
     if temperature < 0:
         raise ValueError("settings.temperature must be non-negative.")
+    allow_unsafe = raw_settings.get("allow_unsafe_code_execution", False)
+    if not isinstance(allow_unsafe, bool):
+        raise ValueError("settings.allow_unsafe_code_execution must be a boolean.")
     settings = Settings(
         seed=_nonnegative_int(raw_settings.get("seed", 42), "settings.seed"),
         max_tokens=_positive_int(raw_settings.get("max_tokens", 4096), "settings.max_tokens"),
@@ -239,6 +288,7 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         results_dir=_string(raw_settings.get("results_dir", "results"), "settings.results_dir"),
         charts_dir=_string(raw_settings.get("charts_dir", "charts"), "settings.charts_dir"),
         hf_token_env=_string(raw_settings.get("hf_token_env", "HF_TOKEN"), "settings.hf_token_env"),
+        allow_unsafe_code_execution=allow_unsafe,
     )
 
     return Config(models=models, benchmarks=benchmarks, categories=categories, settings=settings)

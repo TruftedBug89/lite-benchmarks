@@ -103,7 +103,7 @@ def test_scan_syntax_error_is_violation():
 def test_execute_valid_solution_passes():
     untrusted = "def add(a, b):\n    return a + b"
     trusted = "assert add(2, 3) == 5\nassert add(-1, 1) == 0"
-    ok, violations = execute_sandboxed(untrusted, trusted, timeout=15)
+    ok, violations = execute_sandboxed(untrusted, trusted, timeout=15, allow_execution=True)
     assert ok
     assert violations == []
 
@@ -111,13 +111,13 @@ def test_execute_valid_solution_passes():
 def test_execute_wrong_solution_fails():
     untrusted = "def add(a, b):\n    return a - b"
     trusted = "assert add(2, 3) == 5"
-    ok, _ = execute_sandboxed(untrusted, trusted, timeout=15)
+    ok, _ = execute_sandboxed(untrusted, trusted, timeout=15, allow_execution=True)
     assert not ok
 
 
 def test_execute_rejects_malicious_code_without_running():
     untrusted = "import os\nos.system('echo pwned')"
-    ok, violations = execute_sandboxed(untrusted, "assert True", timeout=15)
+    ok, violations = execute_sandboxed(untrusted, "assert True", timeout=15, allow_execution=True)
     assert not ok
     assert violations  # rejected by the scan, never executed
 
@@ -129,20 +129,20 @@ def test_execute_env_is_scrubbed(monkeypatch):
         "import os\n"
         "assert os.environ.get('LITEBENCH_TEST_SECRET_KEY') is None, 'env leaked'"
     )
-    ok, _ = execute_sandboxed("x = 1", trusted, timeout=15)
+    ok, _ = execute_sandboxed("x = 1", trusted, timeout=15, allow_execution=True)
     assert ok
 
 
 def test_execute_cwd_is_sandbox_dir():
     """The child must run inside its temp sandbox, not the repo."""
     trusted = "import os\nassert 'litebench_sbx_' in os.getcwd()"
-    ok, _ = execute_sandboxed("x = 1", trusted, timeout=15)
+    ok, _ = execute_sandboxed("x = 1", trusted, timeout=15, allow_execution=True)
     assert ok
 
 
 def test_execute_timeout_kills_runaway_code():
     untrusted = "while True:\n    pass"
-    ok, violations = execute_sandboxed(untrusted, "", timeout=2)
+    ok, violations = execute_sandboxed(untrusted, "", timeout=2, allow_execution=True)
     assert not ok
     assert violations == ["execution timed out"]
 
@@ -152,5 +152,27 @@ def test_execute_numpy_available():
     pytest.importorskip("numpy")
     untrusted = "import numpy as np\ndef f():\n    return float(np.mean([1, 2, 3]))"
     trusted = "assert f() == 2.0"
-    ok, violations = execute_sandboxed(untrusted, trusted, timeout=30)
+    ok, violations = execute_sandboxed(untrusted, trusted, timeout=30, allow_execution=True)
     assert ok, violations
+
+
+def test_execute_fails_closed_without_opt_in():
+    """No allow_execution flag => code never runs, regardless of content."""
+    ok, violations = execute_sandboxed("def add(a, b):\n    return a + b", "assert add(1,1)==2", timeout=15)
+    assert not ok
+    assert violations == ["code execution is disabled (allow_unsafe_code_execution not enabled)"]
+
+
+def test_scan_rejects_name_based_dunder_lookup():
+    # getattr/hasattr are blocked outright, which closes the
+    # name-based dunder escape (getattr(o, "__subclasses__")) at the root.
+    assert scan_code("hasattr(obj, '__subclasses__')")
+    assert scan_code("hasattr(obj, '__class__')")
+    assert scan_code("getattr(o, '__globals__')")
+    # Any call to getattr is rejected, dunder or not.
+    assert scan_code("getattr(o, 'x')")
+
+
+def test_scan_rejects_reflection_modules():
+    for mod in ("import gc", "import ast", "import pkgutil", "import _thread", "import windows_sandbox"):
+        assert scan_code(mod), f"expected violation for: {mod}"

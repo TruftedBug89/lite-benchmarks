@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import random
 import re
 from abc import ABC, abstractmethod
@@ -27,7 +28,13 @@ def _strip_code_blocks(text: str) -> str:
     # First search for explicit markdown python/py code blocks
     matches = re.findall(r"```(?:python|py)?\s*\n(.*?)\n```", text, re.DOTALL)
     if matches:
-        return matches[-1].strip()
+        # Prefer the first block that defines a function; otherwise the largest
+        # block (the solution is usually the biggest). Blindly taking the *last*
+        # block is wrong when a model appends a usage/demo snippet after the code.
+        with_def = [m for m in matches if "def " in m]
+        if with_def:
+            return with_def[0].strip()
+        return max(matches, key=len).strip()
     # Fallback for code blocks missing closing tags or simple triple backticks
     if text.startswith("```"):
         text = re.sub(r"^```(?:python|py)?\s*\n?", "", text)
@@ -48,10 +55,31 @@ def _extract_number(text: str) -> str | None:
 
     # Avoid extracting isolated digits from LaTeX fractions like \frac{3}{5}, \dfrac{3}{5}, \tfrac{3}{5}
     cleaned = re.sub(r"\\(?:d|t)?frac\{[^{}]+\}\{[^{}]+\}", "", text)
-    nums = re.findall(r"(?<![\d\w.-])-?[\d,]+(?:\.\d+)?(?![\d\w.-])", cleaned)
+    # The lookahead deliberately allows a trailing sentence period ("...is 42.")
+    # while the lookbehind still stops us splitting decimals like 3.14.
+    nums = re.findall(r"(?<![\d\w.-])-?[\d,]+(?:\.\d+)?(?![\d\w-])", cleaned)
     if nums:
         return nums[-1].replace(",", "").strip()
     return None
+
+
+# Matches the English pronoun "I" when followed by a lowercase word
+# ("I think", "I believe", ...), which is nearly never an option letter.
+_PRONOUN_I = re.compile(r"\bI\b(?=\s+[a-z])")
+
+
+def _candidate_letters(text: str) -> list[str]:
+    """Single-letter option candidates in ``text``, minus prose false positives:
+    the article "a"/"i" (always lowercase) and the pronoun "I" ("I think")."""
+    out: list[str] = []
+    for m in re.finditer(r"\b([A-Ja-j])\b", text):
+        tok = m.group(1)
+        if tok in ("a", "i"):
+            continue
+        if tok == "I" and _PRONOUN_I.match(text, m.start()):
+            continue
+        out.append(tok)
+    return out
 
 
 def _extract_letter(response: str, valid: set[str] | None = None) -> str | None:
@@ -59,29 +87,40 @@ def _extract_letter(response: str, valid: set[str] | None = None) -> str | None:
         valid = {"A", "B", "C", "D"}
     valid_upper = {v.upper() for v in valid}
 
-    # Check boxed content first
+    # 1. Boxed content
     boxed = _extract_boxed(response)
     if boxed and boxed.strip().upper() in valid_upper:
         return boxed.strip().upper()
 
-    # Search for explicit "Answer is X" from the end of the text
-    matches = list(re.finditer(r"(?:answer|choice|option)\s*(?:is|:)?\s*\(?([A-Ja-j])\)?", response, flags=re.IGNORECASE))
+    # 2. Explicit "answer/choice/option is X"
+    matches = list(
+        re.finditer(r"(?:answer|choice|option)\s*(?:is|:)?\s*\(?([A-Ja-j])\)?", response, flags=re.IGNORECASE)
+    )
     if matches:
         last_match = matches[-1].group(1).upper()
         if last_match in valid_upper:
             return last_match
 
-    # Search for standalone letter in the last paragraph or line
-    paragraphs = [p for p in response.strip().split("\n") if p.strip()]
-    if paragraphs:
-        last_para = paragraphs[-1]
-        letter_matches = re.findall(r"\b([A-Ja-j])\b", last_para)
-        if letter_matches and letter_matches[-1].upper() in valid_upper:
-            return letter_matches[-1].upper()
+    lines = [ln for ln in response.strip().splitlines() if ln.strip()]
 
-    # Fallback to general scan in reverse
-    letter_matches = re.findall(r"\b([A-Ja-j])\b", response)
-    for letter in reversed(letter_matches):
+    # 3. A line that is exactly a single (optionally punctuated) letter — the
+    #    cleanest "the answer is just the letter" signal; take the last such line.
+    standalone = None
+    for ln in lines:
+        m = re.fullmatch(r"\s*\(?([A-Ja-j])\)?[.\):]?\s*", ln)
+        if m and m.group(1).upper() in valid_upper:
+            standalone = m.group(1).upper()
+    if standalone:
+        return standalone
+
+    # 4. Last non-empty line, ignoring prose articles/pronouns.
+    if lines:
+        cands = _candidate_letters(lines[-1])
+        if cands and cands[-1].upper() in valid_upper:
+            return cands[-1].upper()
+
+    # 5. Whole-response reverse scan, again ignoring prose articles/pronouns.
+    for letter in reversed(_candidate_letters(response)):
         if letter.upper() in valid_upper:
             return letter.upper()
 
@@ -92,35 +131,47 @@ def _extract_letter(response: str, valid: set[str] | None = None) -> str | None:
 
 
 def _extract_boxed(text: str) -> str | None:
-    idx = text.rfind(r"\boxed{")
+    idx = text.rfind(r"\boxed")
     if idx != -1:
-        substr = text[idx + 7 :]
-        open_braces = 1
-        chars = []
-        for c in substr:
-            if c == "{":
-                open_braces += 1
-            elif c == "}":
-                open_braces -= 1
-                if open_braces == 0:
-                    break
-            chars.append(c)
-        if chars and open_braces == 0:
-            return "".join(chars).strip()
+        # Tolerate optional whitespace between \boxed and the opening brace
+        # (\boxed{42} and \boxed {42}).
+        brace = text.find("{", idx + len(r"\boxed"))
+        if brace != -1:
+            substr = text[brace + 1 :]
+            open_braces = 1
+            chars = []
+            for c in substr:
+                if c == "{":
+                    open_braces += 1
+                elif c == "}":
+                    open_braces -= 1
+                    if open_braces == 0:
+                        break
+                chars.append(c)
+            if chars and open_braces == 0:
+                return "".join(chars).strip()
 
-    m = re.findall(r"\\boxed\{([^{}]+)\}", text)
+    m = re.findall(r"\\boxed\s*\{([^{}]+)\}", text)
     if m:
         return m[-1].strip()
     return None
 
 
-def _execute_code(untrusted_code: str, trusted_code: str, timeout: int) -> bool:
+def _execute_code(
+    untrusted_code: str, trusted_code: str, timeout: int, *, allow_execution: bool = False
+) -> bool:
     """Run model-generated code + trusted test harness in the sandbox.
 
-    The untrusted portion is AST-scanned for dangerous constructs first;
-    the child process runs with a scrubbed environment in a temp directory.
+    ``allow_execution`` is the opt-in gate, threaded from
+    ``settings.allow_unsafe_code_execution``. It is enforced INSIDE the sandbox
+    (``execute_sandboxed`` fails closed when False), so even a direct
+    ``evaluate()`` call cannot run model code by accident. The untrusted
+    portion is AST-scanned first; on Windows the child is additionally confined
+    by a Job Object, and it always runs with a scrubbed env in a throwaway dir.
     """
-    ok, violations = execute_sandboxed(untrusted_code, trusted_code, timeout)
+    ok, violations = execute_sandboxed(
+        untrusted_code, trusted_code, timeout, allow_execution=allow_execution
+    )
     if violations:
         console.print(
             f"[yellow]Sandbox rejected generated code: {violations[0]}[/yellow]"
@@ -147,9 +198,20 @@ class BenchmarkBase(ABC):
         """Hook to normalize/prepare a raw question dict once upon loading."""
         return dict(raw)
 
+    def row_filter(self, raw: dict) -> bool:
+        """Optional predicate applied to the FULL dataset before sampling.
+
+        Override to restrict sampling to a subset (e.g. SuperGPQA's "hard"
+        rows) so ``num_samples`` is the true sample size. Default keeps all rows.
+        """
+        return True
+
     def load(self) -> list[dict]:
         if self._questions is None:
-            raw_qs = load_questions(self.config, self.settings)
+            # Only pass a filter when a subclass actually overrides row_filter,
+            # so unrestricted benchmarks skip the full-dataset scan.
+            rf = None if type(self).row_filter is BenchmarkBase.row_filter else self.row_filter
+            raw_qs = load_questions(self.config, self.settings, row_filter=rf)
             prepared = [self.prepare(q) for q in raw_qs]
             self._questions = [q for q in prepared if not q.get("_skip", False)]
         return self._questions
@@ -183,7 +245,10 @@ class HumanEvalBenchmark(BenchmarkBase):
         code = _strip_code_blocks(response)
         if not code.lstrip().startswith("def "):
             code = q["prompt"] + "\n" + code
-        return 1.0 if _execute_code(code, q["test"], self.settings.code_exec_timeout) else 0.0
+        return 1.0 if _execute_code(
+            code, q["test"], self.settings.code_exec_timeout,
+            allow_execution=self.settings.allow_unsafe_code_execution,
+        ) else 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -209,7 +274,10 @@ class MBPPBenchmark(BenchmarkBase):
         imports = "\n".join(q.get("test_imports", []))
         tests = "\n".join(q.get("test_list", []))
         trusted = "\n\n".join(p for p in [imports, tests] if p.strip())
-        return 1.0 if _execute_code(code, trusted, self.settings.code_exec_timeout) else 0.0
+        return 1.0 if _execute_code(
+            code, trusted, self.settings.code_exec_timeout,
+            allow_execution=self.settings.allow_unsafe_code_execution,
+        ) else 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +309,10 @@ class BigCodeBenchBenchmark(BenchmarkBase):
             "result = unittest.TextTestRunner(verbosity=0).run(suite)\n"
             "sys.exit(0 if result.wasSuccessful() else 1)\n"
         )
-        return 1.0 if _execute_code(code, test + runner, self.settings.code_exec_timeout) else 0.0
+        return 1.0 if _execute_code(
+            code, test + runner, self.settings.code_exec_timeout,
+            allow_execution=self.settings.allow_unsafe_code_execution,
+        ) else 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -258,6 +329,31 @@ class GPQABenchmark(BenchmarkBase):
         question_text = q.get("question") or q.get("Question", "")
         options = q.get("options") or q.get("choices")
         gold_letter = None
+
+        # The original Idavidrein/gpqa exposes "Correct Answer" / "Incorrect
+        # Answer N" columns; the nichenshun/gpqa_diamond mirror instead packs the
+        # answer choices into a JSON-encoded `metadata` string. Support both so
+        # the option-shuffle + gold-letter logic works on either schema.
+        meta = q.get("metadata")
+        if not options and isinstance(meta, str) and meta.strip():
+            try:
+                meta_d = json.loads(meta)
+            except (json.JSONDecodeError, TypeError):
+                meta_d = None
+            if isinstance(meta_d, dict) and meta_d.get("Correct Answer"):
+                correct = meta_d.get("Correct Answer", "")
+                raw_choices = [
+                    correct,
+                    meta_d.get("Incorrect Answer 1", ""),
+                    meta_d.get("Incorrect Answer 2", ""),
+                    meta_d.get("Incorrect Answer 3", ""),
+                ]
+                if correct and all(raw_choices):
+                    rng = random.Random(f"{self.settings.seed}:{question_text}")
+                    indices = list(range(4))
+                    rng.shuffle(indices)
+                    options = [raw_choices[i] for i in indices]
+                    gold_letter = chr(65 + options.index(correct))
 
         if not options and "Correct Answer" in q:
             correct = q["Correct Answer"]
@@ -285,6 +381,9 @@ class GPQABenchmark(BenchmarkBase):
 
         q["options"] = options
         q["gold_letter"] = gold_letter
+        if not gold_letter:
+            # No recoverable gold answer -> ungradeable; drop rather than score 0.
+            q["_skip"] = True
         return q
 
     def format_prompt(self, q: dict) -> str:
@@ -384,6 +483,28 @@ class GSM8KBenchmark(BenchmarkBase):
 class MMLUProBenchmark(BenchmarkBase):
     name = "mmlu_pro"
     display_name = "MMLU-Pro"
+
+    def prepare(self, raw: dict) -> dict:
+        q = raw
+        options = q.get("options") or []
+        n = len(options)
+        ans_raw = q.get("answer")
+        if ans_raw is None:
+            ans_raw = q.get("answer_index")
+        idx = None
+        if isinstance(ans_raw, int):
+            idx = ans_raw
+        else:
+            s = str(ans_raw).strip()
+            if s.isdigit():
+                idx = int(s)
+            elif len(s) == 1 and s.upper() in "ABCDEFGHIJ":
+                idx = ord(s.upper()) - 65
+        # Drop rows whose gold answer is missing or out of range for the options;
+        # they can never be graded and would otherwise silently score 0.
+        if idx is None or not (0 <= idx < n):
+            q["_skip"] = True
+        return q
 
     def format_prompt(self, q: dict) -> str:
         options = q["options"]
@@ -497,7 +618,10 @@ class SciBenchBenchmark(BenchmarkBase):
             return 0.0
 
         gold_str = str(gold_val).strip()
-        pred = _extract_boxed(response) or _extract_number(response)
+        # Re-extract a number from inside \boxed{...} so "\boxed{x = 5}" still
+        # yields 5 (a bare _extract_boxed would give "x = 5" and fail float()).
+        boxed = _extract_boxed(response)
+        pred = _extract_number(boxed) if boxed else _extract_number(response)
         if pred is None:
             return 0.0
 
@@ -505,9 +629,15 @@ class SciBenchBenchmark(BenchmarkBase):
             return 1.0
 
         try:
-            return 1.0 if abs(float(pred) - float(gold_str)) < 1e-4 else 0.0
+            p = float(pred)
+            g = float(gold_str)
         except ValueError:
             return 0.0
+        # Relative tolerance (matches SciBench's evaluator). The previous
+        # absolute <1e-4 was wrong both ways: it rejected a 5-sig-fig answer to
+        # a large gold (e.g. 299792458 vs 300000000) yet accepted 50% error on a
+        # tiny gold (0.00015 vs 0.0001).
+        return 1.0 if math.isclose(p, g, rel_tol=1e-2, abs_tol=1e-8) else 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -555,10 +685,17 @@ class AIMEBenchmark(BenchmarkBase):
 
 def _normalize_latex(s: str) -> str:
     s = s.strip()
+    s = s.strip("$")
     s = re.sub(r"\s+", "", s)
-    s = s.replace(r"\dfrac", r"\frac")
+    s = s.replace(r"\tfrac", r"\frac").replace(r"\dfrac", r"\frac")
     s = s.replace(r"\left", "").replace(r"\right", "")
     s = s.replace(r"\mathrm", "").replace(r"\mathbf", "").replace(r"\text", "")
+    # Drop TeX spacing commands and \circ so e.g. "5\," == "5" and "90^\circ"
+    # normalizes consistently.
+    for sp in (r"\,", r"\!", r"\;", r"\:", r"\ "):
+        s = s.replace(sp, "")
+    s = s.replace(r"\circ", "")
+    s = s.rstrip(".")
     return s
 
 
@@ -585,24 +722,20 @@ class MATH500Benchmark(BenchmarkBase):
         if pred_boxed and _normalize_latex(pred_boxed) == _normalize_latex(gold_boxed):
             return 1.0
 
-        # Only do numerical float comparison if both are simple standalone numbers
+        # Numeric comparison is ONLY valid when the gold answer is itself a plain
+        # number. Comparing against _extract_number(gold) would pull incidental
+        # digits out of symbolic gold (\sqrt{2}->"2", 3\sqrt{2}->"2", 2^5->"5")
+        # and mark wrong answers correct. m_gold is non-None iff gold_boxed is a
+        # plain number.
         m_gold = re.match(r"^-?[\d,]+(?:\.\d+)?$", gold_boxed.replace(",", "").strip())
-        if pred_boxed:
-            m_pred = re.match(r"^-?[\d,]+(?:\.\d+)?$", pred_boxed.replace(",", "").strip())
-            if m_gold and m_pred:
+        if m_gold:
+            gold_num = float(m_gold.group(0))
+            # Prefer the boxed prediction; otherwise a number from the prose.
+            pred_box = _extract_number(pred_boxed) if pred_boxed else None
+            pred_num = pred_box or _extract_number(response)
+            if pred_num is not None and re.fullmatch(r"-?[\d.]+", pred_num):
                 try:
-                    return 1.0 if abs(float(m_gold.group(0)) - float(m_pred.group(0))) < 1e-6 else 0.0
-                except ValueError:
-                    pass
-
-        gold_num = _extract_number(gold_str)
-        pred_num = _extract_number(response)
-        if gold_num is not None and pred_num is not None:
-            m_g = re.match(r"^-?[\d.]+$", gold_num)
-            m_p = re.match(r"^-?[\d.]+$", pred_num)
-            if m_g and m_p and r"\frac" not in gold_str:
-                try:
-                    return 1.0 if abs(float(gold_num) - float(pred_num)) < 1e-6 else 0.0
+                    return 1.0 if abs(gold_num - float(pred_num)) < 1e-6 else 0.0
                 except ValueError:
                     pass
         return 0.0
@@ -617,9 +750,16 @@ class SuperGPQABenchmark(BenchmarkBase):
     name = "supergpqa"
     display_name = "SuperGPQA"
 
+    def row_filter(self, raw: dict) -> bool:
+        # Restrict to the "hard" subset BEFORE sampling so num_samples=50 really
+        # yields 50 hard questions (the old code sampled first and filtered
+        # after, shrinking the effective sample to ~27% of num_samples).
+        return str(raw.get("difficulty", "")).strip().lower() == "hard"
+
     def prepare(self, raw: dict) -> dict:
         q = raw
-        # Filter for hard subset only
+        # Defensive: rows are pre-filtered to "hard" by row_filter, but skip any
+        # non-hard row that slips through rather than scoring it.
         diff = str(q.get("difficulty", "")).strip().lower()
         if diff != "hard":
             q["_skip"] = True
@@ -688,15 +828,40 @@ class SciCodeBenchmark(BenchmarkBase):
 
     def format_prompt(self, q: dict) -> str:
         desc = q.get("problem_description_main") or q.get("prompt", "")
+        background = q.get("problem_background_main") or ""
         deps = q.get("required_dependencies", "")
         deps_str = "\n".join(deps) if isinstance(deps, list) else str(deps)
-        return (
-            "Write a Python script to solve the following scientific problem.\n"
+
+        # The graders call specific function names/signatures. Expose the
+        # skeleton (or, failing that, each sub-step's function_header) so the
+        # model implements the exact symbols the tests expect — without this the
+        # model invents its own names and every test NameErrors -> 0.
+        skeleton = q.get("skeleton") or ""
+        if not skeleton:
+            headers = []
+            for step in q.get("sub_steps", []) or []:
+                if isinstance(step, dict):
+                    hdr = step.get("function_header") or ""
+                    if hdr:
+                        headers.append(hdr)
+            if headers:
+                skeleton = "\n".join(headers)
+
+        parts = [
+            "Write a Python script to solve the following scientific problem.",
             "Return ONLY the complete Python code (including imports). "
-            "No explanations, no markdown code blocks.\n\n"
-            f"{deps_str}\n\n"
-            f"{desc}"
-        )
+            "Implement the functions with the exact names and signatures shown. "
+            "No explanations, no markdown code blocks.",
+            "",
+        ]
+        if deps_str.strip():
+            parts.append(f"Required dependencies:\n{deps_str}\n")
+        if background.strip():
+            parts.append(f"Background:\n{background}\n")
+        parts.append(str(desc))
+        if skeleton.strip():
+            parts.append(f"\nYou must implement exactly these function signatures:\n{skeleton}")
+        return "\n".join(parts)
 
     def evaluate(self, q: dict, response: str) -> float:
         code = _strip_code_blocks(response)
@@ -706,12 +871,61 @@ class SciCodeBenchmark(BenchmarkBase):
         tests_str = "\n\n".join(tests) if isinstance(tests, list) else str(tests)
 
         trusted = "\n\n".join(p for p in [deps_str, tests_str] if p.strip())
-        return 1.0 if _execute_code(code, trusted, self.settings.code_exec_timeout) else 0.0
+        return 1.0 if _execute_code(
+            code, trusted, self.settings.code_exec_timeout,
+            allow_execution=self.settings.allow_unsafe_code_execution,
+        ) else 0.0
 
 
 # ---------------------------------------------------------------------------
 # Tau-Bench — agentic tool use and multi-turn workflow
 # ---------------------------------------------------------------------------
+
+
+def _extract_tool_json(response: str) -> dict | None:
+    """Extract the first balanced ``{...}`` that parses as a JSON object.
+
+    A greedy ``\\{.*\\}`` match breaks when the model writes braced prose before
+    the tool call (e.g. "Per {policy 3}, call {...}"). We instead collect every
+    balanced brace span, parse each, and prefer one that looks like a tool call.
+    """
+    spans: list[str] = []
+    depth = 0
+    start = None
+    for i, ch in enumerate(response):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start is not None:
+                    spans.append(response[start : i + 1])
+                    start = None
+
+    parsed: list[dict] = []
+    for span in spans:
+        try:
+            obj = json.loads(span)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(obj, dict):
+            parsed.append(obj)
+    for obj in parsed:
+        if "name" in obj or "function" in obj or "arguments" in obj:
+            return obj
+    return parsed[0] if parsed else None
+
+
+def _norm_arg_value(v: object) -> str:
+    """Normalize an argument value for comparison; numeric values compare equal
+    across representation (100 == 100.0), everything else is a lowered string."""
+    s = str(v).strip().lower()
+    try:
+        return repr(float(s))
+    except ValueError:
+        return s
 
 
 class TauBenchBenchmark(BenchmarkBase):
@@ -734,7 +948,7 @@ class TauBenchBenchmark(BenchmarkBase):
         return (
             "You are an AI assistant in a multi-turn customer service environment.\n"
             "Based on the conversation history below, output the next required tool call or response.\n"
-            "If calling a tool, reply with JSON format: {\"name\": \"<tool_name>\", \"arguments\": {<args>}}.\n\n"
+            'If calling a tool, reply with JSON format: {"name": "<tool_name>", "arguments": {<args>}}.\n\n'
             f"Conversation History:\n{prompt_text}\n\n"
             "Next Action:"
         )
@@ -750,9 +964,14 @@ class TauBenchBenchmark(BenchmarkBase):
 
         gold_tool_calls = first_ans.get("tool_calls", [])
         if not gold_tool_calls:
-            gold_text = str(first_ans.get("content", ""))
+            # Gold action is a plain text message, not a tool call.
+            gold_text = str(first_ans.get("content") or "")
+            if not gold_text.strip():
+                return 0.0  # empty/None gold must not auto-pass every response
             return 1.0 if gold_text.strip().lower() in response.strip().lower() else 0.0
 
+        # This is a "next-action" dataset: the gold is the single next tool call,
+        # so we grade the model's emitted call against gold_tool_calls[0].
         gold_func = gold_tool_calls[0].get("function", {})
         gold_name = str(gold_func.get("name", "")).strip()
         gold_args_raw = gold_func.get("arguments", {})
@@ -766,35 +985,30 @@ class TauBenchBenchmark(BenchmarkBase):
         else:
             gold_args = {}
 
-        pred_json = None
-        json_match = re.search(r"\{.*\}", response, re.DOTALL)
-        if json_match:
+        pred_json = _extract_tool_json(response)
+        if not isinstance(pred_json, dict):
+            return 0.0
+
+        pred_name = str(pred_json.get("name") or pred_json.get("function", "")).strip()
+        if pred_name.lower() != gold_name.lower():
+            return 0.0
+
+        pred_args = pred_json.get("arguments", {})
+        if isinstance(pred_args, str):
             try:
-                pred_json = json.loads(json_match.group(0))
+                pred_args = json.loads(pred_args)
             except Exception:
-                pred_json = None
-
-        if isinstance(pred_json, dict):
-            pred_name = str(pred_json.get("name") or pred_json.get("function", "")).strip()
-            pred_args = pred_json.get("arguments", {})
-            if isinstance(pred_args, str):
-                try:
-                    pred_args = json.loads(pred_args)
-                except Exception:
-                    pred_args = {}
-
-            if pred_name.lower() == gold_name.lower():
-                if not gold_args:
-                    return 1.0
-                g_norm = {str(k).lower(): str(v).strip().lower() for k, v in gold_args.items()}
-                p_norm = (
-                    {str(k).lower(): str(v).strip().lower() for k, v in pred_args.items()}
-                    if isinstance(pred_args, dict)
-                    else {}
-                )
-                if g_norm == p_norm:
-                    return 1.0
-        return 0.0
+                pred_args = {}
+        p_norm = (
+            {str(k).lower(): _norm_arg_value(v) for k, v in pred_args.items()}
+            if isinstance(pred_args, dict)
+            else {}
+        )
+        if not gold_args:
+            # Gold expects no arguments: accept only if the model sent none.
+            return 1.0 if not p_norm else 0.0
+        g_norm = {str(k).lower(): _norm_arg_value(v) for k, v in gold_args.items()}
+        return 1.0 if g_norm == p_norm else 0.0
 
 
 # ---------------------------------------------------------------------------

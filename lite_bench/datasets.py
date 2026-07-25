@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+from collections.abc import Callable
 
 from datasets import load_dataset
 from rich.console import Console
@@ -14,14 +15,22 @@ console = Console()
 _cache: dict[str, list[dict]] = {}
 
 
-def load_questions(bench: BenchmarkConfig, settings: Settings) -> list[dict]:
+def load_questions(
+    bench: BenchmarkConfig,
+    settings: Settings,
+    row_filter: Callable[[dict], bool] | None = None,
+) -> list[dict]:
     """Load and sample questions from a HuggingFace dataset.
 
-    Uses a fixed seed so the same subset is used across runs.
+    Uses a fixed seed so the same subset is used across runs. When ``row_filter``
+    is given it is applied to the FULL dataset *before* sampling, so
+    ``num_samples`` reflects the filtered population (e.g. SuperGPQA's "hard"
+    subset) instead of silently shrinking after the fact.
     """
     cache_key = (
-        f"{bench.dataset}/{bench.subset}/{bench.split}/"
-        f"{bench.revision or 'main'}/{bench.num_samples}/{settings.seed}"
+        f"{bench.name}/{bench.dataset}/{bench.subset}/{bench.split}/"
+        f"{bench.revision or 'main'}/{bench.num_samples}/{settings.seed}/"
+        f"{'filtered' if row_filter is not None else 'all'}"
     )
     if cache_key in _cache:
         return _cache[cache_key]
@@ -53,16 +62,34 @@ def load_questions(bench: BenchmarkConfig, settings: Settings) -> list[dict]:
     if available == 0:
         raise ValueError(f"Dataset {bench.dataset!r} split {bench.split!r} contains no examples.")
 
-    n = min(bench.num_samples, available)
-    if available <= n:
-        indices = list(range(available))
+    if row_filter is not None:
+        pool = [i for i in range(available) if row_filter(ds[i])]
+        if not pool:
+            raise ValueError(
+                f"Dataset {bench.dataset!r} has no rows matching the benchmark filter."
+            )
+    else:
+        pool = list(range(available))
+
+    pool_size = len(pool)
+    n = min(bench.num_samples, pool_size)
+    if pool_size <= n:
+        indices = pool
     else:
         rng = random.Random(settings.seed)
-        indices = sorted(rng.sample(range(available), n))
+        indices = sorted(rng.sample(pool, n))
 
     ds = ds.select(indices)
 
     questions = [dict(row) for row in ds]
     _cache[cache_key] = questions
-    console.print(f"  [dim]Sampled {len(questions)} questions from {available} available (seeded random sample)[/dim]")
+    if row_filter is not None:
+        console.print(
+            f"  [dim]Sampled {len(questions)} questions from {pool_size} matching rows "
+            f"({available} total, seeded random sample)[/dim]"
+        )
+    else:
+        console.print(
+            f"  [dim]Sampled {len(questions)} questions from {available} available (seeded random sample)[/dim]"
+        )
     return questions

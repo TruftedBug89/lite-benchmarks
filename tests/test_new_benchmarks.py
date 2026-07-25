@@ -14,7 +14,8 @@ from lite_bench.config import BenchmarkConfig, Settings
 
 class NewBenchmarksTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.settings = Settings(code_exec_timeout=5)
+        # SciCode runs real code; the sandbox fails closed unless opted in.
+        self.settings = Settings(code_exec_timeout=5, allow_unsafe_code_execution=True)
         self.dummy_config = BenchmarkConfig(
             name="test",
             enabled=True,

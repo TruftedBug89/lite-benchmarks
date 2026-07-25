@@ -23,12 +23,73 @@ from .config import ModelConfig, Settings
 console = Console()
 
 litellm.suppress_debug_info = True
+# Many models reject parameters they don't support (e.g. reasoning models reject
+# `temperature`/`max_tokens`). Rather than raising, let litellm drop unsupported
+# params so a single incompatible field doesn't zero out an entire model's run.
+litellm.drop_params = True
 
 # LiteLLM response objects trigger noisy Pydantic v2 serializer warnings
 # (optional fields not always populated). Harmless — silence them.
 warnings.filterwarnings("ignore", message="Pydantic serializer warnings")
 
 LOCAL_PREFIXES = ("lm_studio/", "ollama/")
+
+# Remember which (model, env-var) pairs we've already warned about so the
+# "api_key_env not set" notice prints once, not once per question.
+_warned_missing_keys: set[tuple[str, str]] = set()
+
+_PARAM_ERROR_HINTS = (
+    "unsupported",
+    "unexpected keyword",
+    "not supported",
+    "invalid parameter",
+    "unrecognized",
+    "unknown parameter",
+    "invalid_request_error",
+)
+
+
+def _completion_with_fallback(kwargs: dict[str, Any]) -> Any:
+    """Call litellm.completion, retrying once after dropping/translating the
+    specific parameter a model rejected.
+
+    ``litellm.drop_params`` handles most incompatibilities up front; this is a
+    targeted backstop that only fires when the error actually names a parameter,
+    and says *which* parameter was dropped (the old code blindly stripped
+    ``reasoning_effort`` on any "not supported" error, silently disabling
+    thinking for reasoning models)."""
+    try:
+        return litellm.completion(**kwargs)
+    except Exception as e:
+        msg = str(e).lower()
+        if not any(hint in msg for hint in _PARAM_ERROR_HINTS):
+            raise
+
+        dropped: list[str] = []
+        if "reasoning_effort" in kwargs and ("reasoning" in msg or "reasoning_effort" in msg):
+            kwargs.pop("reasoning_effort", None)
+            dropped.append("reasoning_effort")
+        if "temperature" in kwargs and "temperature" in msg:
+            kwargs.pop("temperature", None)
+            dropped.append("temperature")
+        if "max_tokens" in kwargs and ("max_tokens" in msg or "max_completion_tokens" in msg):
+            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
+            dropped.append("max_tokens->max_completion_tokens")
+        if not dropped:
+            # The error looks parameter-related but names nothing we recognize;
+            # shed the most-likely-optional field rather than fail the question.
+            if "reasoning_effort" in kwargs:
+                kwargs.pop("reasoning_effort", None)
+                dropped.append("reasoning_effort")
+            elif "temperature" in kwargs:
+                kwargs.pop("temperature", None)
+                dropped.append("temperature")
+        if not dropped:
+            raise
+        console.print(
+            f"[dim]Model {kwargs.get('model')} rejected a parameter; retrying without {', '.join(dropped)}.[/dim]"
+        )
+        return litellm.completion(**kwargs)
 
 
 @dataclass
@@ -120,24 +181,21 @@ def generate(model: ModelConfig | str, prompt: str, settings: Settings) -> Gener
         kwargs["api_base"] = api_base
     if api_key_env:
         import os as _os
+
         resolved_key = _os.environ.get(api_key_env)
         if resolved_key:
             kwargs["api_key"] = resolved_key
+        elif (model_id, api_key_env) not in _warned_missing_keys:
+            _warned_missing_keys.add((model_id, api_key_env))
+            console.print(
+                f"[yellow]Warning: env var {api_key_env!r} for {model_id} is not set; "
+                f"falling back to litellm's default key lookup.[/yellow]"
+            )
     if extra_params:
         kwargs.update(extra_params)
 
     start = time.perf_counter()
-    try:
-        response = litellm.completion(**kwargs)
-    except Exception as e:
-        if "reasoning_effort" in kwargs and any(
-            msg in str(e).lower()
-            for msg in ("unsupported", "unexpected keyword", "not supported", "invalid parameter")
-        ):
-            kwargs.pop("reasoning_effort", None)
-            response = litellm.completion(**kwargs)
-        else:
-            raise
+    response = _completion_with_fallback(kwargs)
 
     elapsed_ms = (time.perf_counter() - start) * 1000
 
@@ -146,7 +204,13 @@ def generate(model: ModelConfig | str, prompt: str, settings: Settings) -> Gener
     completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
     details = getattr(usage, "completion_tokens_details", None)
     thinking_tokens = int(getattr(details, "reasoning_tokens", 0) or 0)
-    output_tokens = max(0, completion_tokens - thinking_tokens)
+    # OpenAI-style usage folds reasoning into completion_tokens (subtract it);
+    # providers that report reasoning *separately* would otherwise be clamped to
+    # 0, so when thinking >= completion we treat completion as the visible output.
+    if thinking_tokens and thinking_tokens <= completion_tokens:
+        output_tokens = completion_tokens - thinking_tokens
+    else:
+        output_tokens = completion_tokens
     total_tokens = int(getattr(usage, "total_tokens", 0) or (input_tokens + completion_tokens))
 
     # Speed metrics — skip for local models (hardware-dependent)
