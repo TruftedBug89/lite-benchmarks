@@ -121,7 +121,11 @@ settings:
   temperature: 0.0
   request_timeout: 300
   code_exec_timeout: 30
-  max_retries: 3
+  # Attempts per question on transient provider errors (timeouts, 429, 5xx).
+  # 0 = wait for a good response indefinitely (until Force Stop); a positive
+  # number caps attempts. Permanent errors (context length, content filter)
+  # are never retried — they can never succeed.
+  max_retries: 0
   max_concurrency: 5
   # How many models run in parallel (each does its benchmarks one at a time);
   # extra models queue.

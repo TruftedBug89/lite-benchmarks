@@ -72,7 +72,10 @@ class Settings:
     temperature: float = 0.0
     request_timeout: int = 120
     code_exec_timeout: int = 15
-    max_retries: int = 3
+    # Attempts per question for transient provider errors. 0 (default) = wait
+    # for a good response indefinitely (until Force Stop); a positive value caps
+    # attempts. Permanent errors (context length, content filter) never retry.
+    max_retries: int = 0
     max_concurrency: int = 5
     max_concurrent_models: int = 4
     results_dir: str = "results"
@@ -279,7 +282,7 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         code_exec_timeout=_positive_int(
             raw_settings.get("code_exec_timeout", 15), "settings.code_exec_timeout"
         ),
-        max_retries=_nonnegative_int(raw_settings.get("max_retries", 3), "settings.max_retries"),
+        max_retries=_nonnegative_int(raw_settings.get("max_retries", 0), "settings.max_retries"),
         max_concurrency=_positive_int(raw_settings.get("max_concurrency", 5), "settings.max_concurrency"),
         max_concurrent_models=_positive_int(
             raw_settings.get("max_concurrent_models", 4),

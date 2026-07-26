@@ -51,6 +51,7 @@ def _is_retryable_error(e: Exception) -> bool:
 class EngineCallbacks(Protocol):
     def on_event(self, model_name: str, message: str) -> None: ...
     def on_benchmark_start(self, model_name: str, bench_name: str, total_questions: int) -> None: ...
+    def on_question_retry(self, model_name: str, bench_name: str, info: dict) -> None: ...
     def on_question_done(self, model_name: str, bench_name: str, detail: dict) -> None: ...
     def on_benchmark_done(self, model_name: str, bench_name: str, summary: dict) -> None: ...
     def on_model_done(self, model_name: str) -> None: ...
@@ -62,6 +63,13 @@ class DefaultEngineCallbacks:
 
     def on_benchmark_start(self, model_name: str, bench_name: str, total_questions: int) -> None:
         pass
+
+    def on_question_retry(self, model_name: str, bench_name: str, info: dict) -> None:
+        console.print(
+            f"[dim][{model_name}] Q#{info.get('question_id', 0)} attempt "
+            f"{info.get('attempt', '?')} failed ({info.get('error', '')}); "
+            f"retrying in {info.get('backoff', 0):.0f}s…[/dim]"
+        )
 
     def on_question_done(self, model_name: str, bench_name: str, detail: dict) -> None:
         pass
@@ -77,6 +85,20 @@ class FatalModelError(Exception):
     """Raised when an unrecoverable account/auth error occurs for a model."""
 
 
+def _interruptible_sleep(seconds: float, should_stop: Callable[[], bool] | None) -> bool:
+    """Sleep in 0.5s slices so Force Stop is honored mid-backoff.
+
+    Returns True if the sleep was cut short by a stop request."""
+    deadline = time.monotonic() + seconds
+    while True:
+        if should_stop and should_stop():
+            return True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(0.5, remaining))
+
+
 def process_question(
     qi: int,
     q: dict,
@@ -84,8 +106,17 @@ def process_question(
     model: ModelConfig,
     settings: Settings,
     should_stop: Callable[[], bool] | None = None,
+    on_retry: Callable[[str, str, dict], None] | None = None,
 ) -> dict:
-    """Process a single question with separate provider-retry and evaluation logic."""
+    """Process a single question with separate provider-retry and evaluation logic.
+
+    Retry policy: transient provider errors (timeouts, 429s, 5xx, connection
+    drops, empty responses) are retried with exponential backoff until a good
+    response arrives — with ``max_retries <= 0`` (the default) the question
+    waits indefinitely and never advances on an error; a positive value caps
+    the number of attempts. Permanent errors (prompt too long, content filter)
+    can never succeed, so they give up immediately; fatal auth/quota errors
+    abort the whole model. Force Stop cancels the wait at any point."""
     if should_stop and should_stop():
         return {
             "question_id": qi,
@@ -96,12 +127,15 @@ def process_question(
         }
 
     prompt = bench_obj.format_prompt(q)
-    max_retries = max(1, settings.max_retries)
+    max_attempts: int | None = settings.max_retries if settings.max_retries > 0 else None
     gen_result: GenerationResult | None = None
     gen_error: Exception | None = None
+    stopped = False
+    attempt = 0
 
-    for attempt in range(max_retries):
+    while True:
         if should_stop and should_stop():
+            stopped = True
             break
         try:
             gen_result = generate(model, prompt, settings)
@@ -110,29 +144,53 @@ def process_question(
         except Exception as e:
             gen_error = e
             if is_fatal_error(e):
-                raise FatalModelError(f"Fatal error for {model.name}: {e}") from e
+                raise FatalModelError(f"Fatal error for {model.name}: {str(e)[:500]}") from e
 
             # Permanent errors (bad request, context too long, content filter)
-            # will never succeed — stop retrying immediately instead of burning
-            # max_retries with backoff on every such question.
+            # will never succeed no matter how long we wait — record and move on.
             if not _is_retryable_error(e):
                 break
 
-            if attempt < max_retries - 1:
-                err_str = str(e).lower()
-                backoff = min(60.0, 5.0 * (2**attempt)) + random.uniform(0, 5.0)
-                if "429" in err_str or "rate limit" in err_str:
-                    backoff = max(60.0, backoff)
-                time.sleep(backoff)
+            attempt += 1
+            if max_attempts is not None and attempt >= max_attempts:
+                break
+
+            err_str = str(e).lower()
+            backoff = min(60.0, 5.0 * (2 ** min(attempt - 1, 4))) + random.uniform(0, 5.0)
+            if "429" in err_str or "rate limit" in err_str:
+                backoff = max(60.0, backoff)
+            if on_retry:
+                on_retry(
+                    model.name,
+                    bench_obj.name,
+                    {
+                        "question_id": qi,
+                        "attempt": attempt,
+                        "max_attempts": max_attempts,
+                        "backoff": backoff,
+                        "error": str(e)[:200],
+                    },
+                )
+            if _interruptible_sleep(backoff, should_stop):
+                stopped = True
+                break
 
     if gen_result is None:
+        if stopped:
+            return {
+                "question_id": qi,
+                "status": "cancelled",
+                "score": 0.0,
+                "prompt": prompt[:8000],
+                "response": "",
+            }
         err_msg = str(gen_error) if gen_error else "Max retries exceeded"
         err_type = type(gen_error).__name__ if gen_error else "ProviderError"
         return {
             "question_id": qi,
             "status": "error",
             "error_type": err_type,
-            "error_msg": err_msg,
+            "error_msg": err_msg[:2000],
             "score": 0.0,
             "input_tokens": 0,
             "output_tokens": 0,
@@ -142,7 +200,7 @@ def process_question(
             "tokens_per_second": None,
             "cost_usd": None,
             "prompt": prompt[:8000],
-            "response": f"[Error: {err_msg}]",
+            "response": f"[Error: {err_msg[:500]}]",
         }
 
     # Separate evaluation try-block — evaluation errors score 0.0 and are never retried against provider
@@ -173,7 +231,7 @@ def process_question(
         "response": gen_result.text[:8000],
     }
     if err_msg:
-        res_dict["error_msg"] = err_msg
+        res_dict["error_msg"] = err_msg[:2000]
     return res_dict
 
 
@@ -266,6 +324,10 @@ def run_engine(
 
                 # Manual executor (no `with`) so stop never waits on in-flight calls.
                 executor = ThreadPoolExecutor(max_workers=max_concurrency)
+                # Not every callbacks object implements on_question_retry (the
+                # Protocol is structural); tolerate its absence so a minimal
+                # custom callbacks class doesn't AttributeError at submit time.
+                _on_retry = getattr(callbacks, "on_question_retry", None)
                 futures = {
                     executor.submit(
                         process_question,
@@ -275,6 +337,7 @@ def run_engine(
                         model,
                         settings,
                         should_stop,
+                        _on_retry,
                     ): (qi, q)
                     for qi, q in enumerate(questions)
                 }

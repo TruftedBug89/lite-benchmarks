@@ -20,6 +20,9 @@ class RecordingCallbacks:
     def on_event(self, model_name, message):
         pass
 
+    def on_question_retry(self, model_name, bench_name, info):
+        pass
+
     def on_benchmark_start(self, model_name, bench_name, total):
         with self.lock:
             self.events.append(("start", model_name, bench_name))
@@ -67,7 +70,7 @@ def test_models_run_in_parallel_but_benchmarks_sequential():
     config = _make_config(n_models=6, n_benches=2, settings=settings)
     cb = RecordingCallbacks()
 
-    def slow_question(qi, q, bench, model, settings_, should_stop=None):
+    def slow_question(qi, q, bench, model, settings_, should_stop=None, on_retry=None):
         time.sleep(0.2)
         return _detail(qi)
 
@@ -107,7 +110,7 @@ def test_force_stop_cancels_queued_models_fast():
     calls = {"n": 0}
     calls_lock = threading.Lock()
 
-    def hung_question(qi, q, bench, model, settings_, should_stop=None):
+    def hung_question(qi, q, bench, model, settings_, should_stop=None, on_retry=None):
         if should_stop and should_stop():
             return {"question_id": qi, "status": "cancelled", "score": 0.0}
         with calls_lock:

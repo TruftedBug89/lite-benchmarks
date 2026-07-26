@@ -185,6 +185,15 @@
       padding: 0.6rem 0.75rem; font-family: 'JetBrains Mono', monospace; font-size: 0.76rem;
       color: var(--text-muted); height: 52px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
     }
+    .error-box {
+      display: none; background: rgba(244,63,94,0.08); border: 1px solid rgba(244,63,94,0.25);
+      color: var(--accent-rose); border-radius: 8px; padding: 0.4rem 0.6rem;
+      font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; line-height: 1.35;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: help;
+    }
+    .error-box.retry {
+      background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.3); color: var(--accent-amber);
+    }
     .leaderboard-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 16px; padding: 1.25rem; backdrop-filter: blur(12px); }
     .custom-table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; }
     .custom-table th { text-align: left; padding: 0.7rem 1rem; font-size: 0.78rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border-color); }
@@ -780,7 +789,8 @@
         <div class="metric-item"><div class="metric-val tps-val" style="color:var(--accent-cyan)">—</div><div class="metric-lbl">Tokens/s</div></div>
         <div class="metric-item"><canvas class="sparkline-canvas" width="90" height="24"></canvas><div class="metric-lbl">Speed</div></div>
       </div>
-      <div class="output-box">Awaiting response...</div>`;
+      <div class="output-box">Awaiting response...</div>
+      <div class="error-box"></div>`;
     return card;
   }
 
@@ -801,9 +811,25 @@
     card.querySelector('.bench-label').innerText = st.current_benchmark_display || st.current_benchmark || 'Benchmarking';
     card.querySelector('.q-counter').innerText = `${st.q_index}/${st.q_total} (${pct.toFixed(0)}%)`;
     card.querySelector('.progress-bar-fill').style.width = `${pct}%`;
-    card.querySelector('.scored-val').innerText = `${st.correct}/${st.scored}`;
+    const failedHtml = st.failed > 0
+      ? ` <span style="color:var(--accent-rose)" title="Questions that failed (provider or scorer)">+${st.failed} err</span>`
+      : '';
+    card.querySelector('.scored-val').innerHTML = `${st.correct}/${st.scored}${failedHtml}`;
     card.querySelector('.tps-val').innerText = st.avg_tps ? `${st.avg_tps}/s` : '—';
     card.querySelector('.output-box').innerText = st.latest_snippet || 'Awaiting response...';
+
+    // Error line: capped preview in the card, complete error in the hover tooltip.
+    const errBox = card.querySelector('.error-box');
+    const note = st.retry_note || st.last_error || '';
+    if (note) {
+      errBox.style.display = 'block';
+      errBox.classList.toggle('retry', !!st.retry_note);
+      errBox.textContent = note.length > 180 ? note.slice(0, 180) + '…' : note;
+      errBox.title = note;
+    } else {
+      errBox.style.display = 'none';
+      errBox.removeAttribute('title');
+    }
 
     const hist = sparklineHistories.get(st.name) || [];
     if (st.avg_tps) hist.push(st.avg_tps);

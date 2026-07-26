@@ -133,6 +133,8 @@ class LiveModelState:
     total_tokens: int = 0
     avg_tps: float | None = None
     latest_snippet: str = ""
+    last_error: str | None = None
+    retry_note: str | None = None
     is_finished: bool = False
     is_failed: bool = False
     fatal_error: str | None = None
@@ -171,6 +173,24 @@ class EngineCallbacksBridge(DefaultEngineCallbacks):
                 state.current_benchmark_display = info.get("display", bench_name)
                 state.status = "Running"
 
+    def on_question_retry(self, model_name: str, bench_name: str, info: dict) -> None:
+        with self.engine.state_lock:
+            state = self.engine.states.get(model_name)
+            if state:
+                state.retry_note = (
+                    f"⏳ Q#{info.get('question_id', 0)} attempt {info.get('attempt', '?')} failed "
+                    f"({info.get('error', '')}); retrying in {info.get('backoff', 0):.0f}s"
+                )
+            # Log the first few attempts, then every 5th, so a persistently
+            # failing provider stays visible without flooding the web log.
+            attempt = info.get("attempt", 0)
+            if attempt <= 3 or attempt % 5 == 0:
+                max_str = info.get("max_attempts") or "∞"
+                self.engine._log_locked(
+                    f"[{model_name}] Q#{info.get('question_id', 0)} retry {attempt}/{max_str}: "
+                    f"{info.get('error', '')} — waiting {info.get('backoff', 0):.0f}s for a good response"
+                )
+
     def on_question_done(self, model_name: str, bench_name: str, detail: dict) -> None:
         with self.engine.state_lock:
             state = self.engine.states.get(model_name)
@@ -185,9 +205,15 @@ class EngineCallbacksBridge(DefaultEngineCallbacks):
             status = detail.get("status", "error")
             score = float(detail.get("score", 0.0))
 
-            state.q_index = qi + 1
-            state.scored += 1
-            state.correct += score
+            # Monotonic progress: questions finish out of order under
+            # concurrency, so count completions instead of using the id.
+            state.q_index += 1
+            state.retry_note = None
+            # Match the engine's accounting: only success/eval_error are scored;
+            # provider errors are failures, not zeros in the accuracy average.
+            if status in ("success", "eval_error"):
+                state.scored += 1
+                state.correct += score
             if status in ("error", "eval_error"):
                 state.failed += 1
 
@@ -204,8 +230,16 @@ class EngineCallbacksBridge(DefaultEngineCallbacks):
                     state.avg_tps = (state.avg_tps * 0.8) + (tps * 0.2)
 
             resp = detail.get("response", "")
-            if resp:
+            # Skip the "[Error: …]" wrapper for failed generations — the
+            # dedicated error line shows it instead of the response snippet.
+            if resp and status != "error":
                 state.latest_snippet = resp[:150].replace("\n", " ")
+
+            error_msg = detail.get("error_msg", "")
+            if status in ("error", "eval_error") and error_msg:
+                state.last_error = f"Q#{qi}: {error_msg[:4000]}"
+            elif status == "success":
+                state.last_error = None
 
             q_entry = {
                 "index": qi,
@@ -213,7 +247,7 @@ class EngineCallbacksBridge(DefaultEngineCallbacks):
                 "status": status,
                 "score": score,
                 "response_text": resp[:1000],
-                "error_msg": detail.get("error_msg", ""),
+                "error_msg": error_msg[:2000],
                 "input_tokens": detail.get("input_tokens", 0),
                 "output_tokens": detail.get("output_tokens", 0),
                 "thinking_tokens": detail.get("thinking_tokens", 0),
@@ -255,8 +289,16 @@ class DashboardEngine:
         self._log_counter: int = 0  # monotonic; lets the UI detect new log lines
 
     def _log_locked(self, msg: str) -> None:
-        """Append a log entry. Caller must hold state_lock."""
+        """Append a log entry. Caller must hold state_lock.
+
+        Entries are single-line and capped — provider exceptions can be
+        multi-KB dumps that would flood the web log and SSE frames. The full
+        error text is still available in results/latest.json and the card
+        tooltips."""
         ts = time.strftime("%H:%M:%S")
+        msg = str(msg).replace("\n", " ")
+        if len(msg) > 800:
+            msg = msg[:800] + "…"
         entry = f"[{ts}] {msg}"
         self.logs.append(entry)
         self._log_counter += 1

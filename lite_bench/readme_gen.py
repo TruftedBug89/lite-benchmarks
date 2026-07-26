@@ -309,7 +309,10 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     _a(f"- `temperature`: {config.settings.temperature}")
     _a(f"- `max_tokens`: {config.settings.max_tokens}")
     _a(f"- `timeout`: {config.settings.request_timeout}s per request")
-    _a(f"- `retries`: up to {config.settings.max_retries} retries with exponential backoff and jitter")
+    if config.settings.max_retries > 0:
+        _a(f"- `retries`: up to {config.settings.max_retries} attempts with exponential backoff and jitter")
+    else:
+        _a("- `retries`: transient errors retry with exponential backoff until a good response arrives (no cap); permanent errors (context length, content filter) are never retried")
     _a("")
 
     # ── How to run ──────────────────────────────────────────────────
