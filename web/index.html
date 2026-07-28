@@ -195,17 +195,52 @@
       background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.3); color: var(--accent-amber);
     }
     .leaderboard-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 16px; padding: 1.25rem; backdrop-filter: blur(12px); }
-    .custom-table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; }
+    .leaderboard-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+    .filter-pills { display: flex; gap: 0.35rem; }
+    .filter-pill { font-size: 0.72rem; font-weight: 600; padding: 0.25rem 0.65rem; border-radius: 12px; background: rgba(255,255,255,0.06); border: 1px solid var(--border-color); color: var(--text-muted); cursor: pointer; transition: all 0.15s ease; }
+    .filter-pill.active { background: rgba(99,102,241,0.25); border-color: var(--accent-primary); color: white; box-shadow: 0 0 10px rgba(99,102,241,0.3); }
+    .filter-pill:hover:not(.active) { background: rgba(255,255,255,0.1); }
+    .custom-table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
     .custom-table th { text-align: left; padding: 0.7rem 1rem; font-size: 0.78rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border-color); }
-    .custom-table td { padding: 0.8rem 1rem; font-size: 0.85rem; border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 0.2s; }
-    .custom-table tr { transition: transform 0.4s ease-out, opacity 0.3s ease; }
-    .custom-table tr:hover td { background: rgba(255,255,255,0.03); }
-    .table-score-bar-bg { width: 100px; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; display: inline-block; vertical-align: middle; margin-left: 0.6rem; }
-    .table-score-bar-fill { height: 100%; background: var(--accent-green); border-radius: 3px; transition: width 0.35s ease-out; }
-    .log-line { animation: fadeInSlide 0.25s ease-out forwards; line-height: 1.5; }
-    @keyframes fadeInSlide { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); display: none; align-items: center; justify-content: center; z-index: 999; }
-    .modal-overlay.active { display: flex; }
+    .custom-table td { padding: 0.8rem 1rem; font-size: 0.85rem; border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 0.25s, color 0.25s; }
+    .custom-table tr { transition: transform 0.45s cubic-bezier(0.2, 0, 0, 1), opacity 0.3s ease; position: relative; }
+    .custom-table tr:hover td { background: rgba(255,255,255,0.04); }
+
+    /* Live Model Row Highlighting */
+    .custom-table tr.live-row {
+      background: linear-gradient(90deg, rgba(6, 182, 212, 0.12) 0%, rgba(99, 102, 241, 0.06) 100%);
+      box-shadow: inset 3px 0 0 var(--accent-cyan);
+    }
+    .custom-table tr.live-row td {
+      border-bottom-color: rgba(6, 182, 212, 0.2);
+    }
+    .custom-table tr.live-row.pulse-glow {
+      animation: livePulse 2s infinite alternate ease-in-out;
+    }
+    @keyframes livePulse {
+      0% { background: linear-gradient(90deg, rgba(6, 182, 212, 0.14) 0%, rgba(99, 102, 241, 0.06) 100%); }
+      100% { background: linear-gradient(90deg, rgba(99, 102, 241, 0.2) 0%, rgba(6, 182, 212, 0.12) 100%); }
+    }
+
+    /* Rank Change Highlight Animations */
+    .custom-table tr.rank-up td {
+      animation: flashGreen 0.85s ease-out;
+    }
+    .custom-table tr.rank-down td {
+      animation: flashAmber 0.85s ease-out;
+    }
+    @keyframes flashGreen {
+      0% { background: rgba(16, 185, 129, 0.35); }
+      100% { background: transparent; }
+    }
+    @keyframes flashAmber {
+      0% { background: rgba(245, 158, 11, 0.35); }
+      100% { background: transparent; }
+    }
+
+    /* Status Badges */
+    .status-badge.saved { background: rgba(255,255,255,0.06); color: var(--text-muted); border: 1px solid rgba(255,255,255,0.12); }
+    .status-badge.live { background: rgba(6,182,212,0.2); color: #38bdf8; border: 1px solid rgba(6,182,212,0.4); box-shadow: 0 0 10px rgba(6,182,212,0.3); }
     .modal-content {
       background: #0f172a; border: 1px solid var(--border-glow); border-radius: 18px;
       width: 520px; max-width: 90vw; padding: 1.5rem;
@@ -295,6 +330,18 @@
           <div class="stat-value" id="total-tokens-stat" style="color: var(--accent-amber);">0</div>
           <div class="stat-label">Tokens</div>
         </div>
+        <div class="stat-box" title="API 429 Rate Limit backoff count">
+          <div class="stat-value" id="rate-limit-stat" style="color: var(--accent-amber);">0</div>
+          <div class="stat-label">Rate Limits</div>
+        </div>
+        <div class="stat-box" title="Responses truncated at max_tokens">
+          <div class="stat-value" id="truncated-stat" style="color: #a855f7;">0</div>
+          <div class="stat-label">Truncated</div>
+        </div>
+        <div class="stat-box" title="Evaluator/scorer code errors">
+          <div class="stat-value" id="eval-error-stat" style="color: var(--accent-rose);">0</div>
+          <div class="stat-label">Scorer Errs</div>
+        </div>
       </div>
       <div class="throughput-chart-container"><canvas id="throughput-canvas"></canvas></div>
       <button class="btn btn-secondary btn-sm" onclick="generateReports()">📊 Reports</button>
@@ -312,13 +359,23 @@
     </div>
 
     <div class="leaderboard-card">
-      <div class="grid-title">🏅 Live Leaderboard</div>
+      <div class="leaderboard-header">
+        <div class="grid-title">
+          <span>🏅 Live Leaderboard</span>
+          <span id="leaderboard-counts-badge" style="font-size: 0.75rem; font-weight: 500; color: var(--text-dim); background: rgba(255,255,255,0.06); padding: 0.25rem 0.6rem; border-radius: 12px; border: 1px solid var(--border-color);">0 Models</span>
+        </div>
+        <div class="filter-pills">
+          <button class="filter-pill active" id="filter-all" onclick="setLeaderboardFilter('all')">All Models</button>
+          <button class="filter-pill" id="filter-live" onclick="setLeaderboardFilter('live')">⚡ Live Active</button>
+          <button class="filter-pill" id="filter-saved" onclick="setLeaderboardFilter('saved')">🏛️ Saved</button>
+        </div>
+      </div>
       <table class="custom-table">
         <thead>
           <tr><th>Rank</th><th>Model</th><th>Accuracy</th><th>Questions</th><th>Tokens</th><th>Speed</th><th>Status</th></tr>
         </thead>
         <tbody id="leaderboard-tbody">
-          <tr id="empty-leaderboard-notice"><td colspan="7" style="text-align: center; color: var(--text-dim); padding: 2rem;">No data yet.</td></tr>
+          <tr id="empty-leaderboard-notice"><td colspan="7" style="text-align: center; color: var(--text-dim); padding: 2rem;">No model data available.</td></tr>
         </tbody>
       </table>
     </div>
@@ -384,9 +441,15 @@
 <script>
   let configData = null;
   let savedModels = [];
+  let savedResults = {};
+  let runHistory = [];
+  let currentLeaderboardFilter = 'all';
   let fleet = [];
   let isRunning = false;
+  let lastIsRunning = false;
   let envKeys = [];
+  let lastStatusModels = [];
+  const lastRanks = new Map();
 
   const PROVIDER_KEY_MAP = {
     'openai': 'OPENAI_API_KEY',
@@ -411,6 +474,51 @@
   const sparklineHistories = new Map();
   let throughputHistory = [];
   let lastLogTotal = 0;
+
+  function setLeaderboardFilter(filter) {
+    currentLeaderboardFilter = filter;
+    document.querySelectorAll('.filter-pill').forEach(btn => btn.classList.remove('active'));
+    const btn = document.getElementById(`filter-${filter}`);
+    if (btn) btn.classList.add('active');
+    renderLeaderboard(lastStatusModels);
+  }
+
+  async function loadSavedResults() {
+    try {
+      const res = await fetch('/api/results');
+      if (res.ok) {
+        const data = await res.json();
+        savedResults = data.models || {};
+        renderLeaderboard(lastStatusModels);
+      }
+    } catch (e) { console.error("Failed to load saved results:", e); }
+  }
+
+  async function loadRunHistory() {
+    try {
+      const res = await fetch('/api/history');
+      if (res.ok) {
+        const data = await res.json();
+        runHistory = data.runs || [];
+        renderLeaderboard(lastStatusModels);
+      }
+    } catch (e) { console.error("Failed to load run history:", e); }
+  }
+
+  function getHistoryStats(modelName) {
+    const scores = [];
+    for (const run of runHistory) {
+      const m = run.models && run.models[modelName];
+      if (m && typeof m.overall_score === 'number') scores.push(m.overall_score);
+    }
+    if (scores.length < 2) return null;
+    const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
+    const min = Math.min(...scores);
+    const max = Math.max(...scores);
+    const variance = scores.reduce((a, b) => a + (b - mean) ** 2, 0) / scores.length;
+    const stddev = Math.sqrt(variance);
+    return { mean, min, max, stddev, runs: scores.length };
+  }
 
   async function loadConfig() {
     try {
@@ -714,6 +822,11 @@
   }
 
   function updateDashboard(status) {
+    if (lastIsRunning && !status.is_running) {
+      loadSavedResults();
+      loadRunHistory();
+    }
+    lastIsRunning = status.is_running;
     isRunning = status.is_running;
     document.getElementById('start-btn').style.display = isRunning ? 'none' : 'inline-flex';
     document.getElementById('stop-btn').style.display = isRunning ? 'inline-flex' : 'none';
@@ -723,9 +836,21 @@
     document.getElementById('elapsed-time-stat').innerText = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 
     const states = Object.values(status.models || {});
+    lastStatusModels = states;
     document.getElementById('active-models-stat').innerText = states.filter(st => !st.is_finished && !st.is_failed).length;
     const totalTokens = states.reduce((acc, st) => acc + (st.total_tokens || 0), 0);
     document.getElementById('total-tokens-stat').innerText = totalTokens.toLocaleString();
+
+    const totalRateLimits = states.reduce((acc, st) => acc + (st.rate_limit_count || 0), 0);
+    const totalTruncated = states.reduce((acc, st) => acc + (st.truncated_count || 0), 0);
+    const totalEvalErrors = states.reduce((acc, st) => acc + (st.eval_error_count || 0), 0);
+
+    const rlEl = document.getElementById('rate-limit-stat');
+    if (rlEl) rlEl.innerText = totalRateLimits;
+    const trEl = document.getElementById('truncated-stat');
+    if (trEl) trEl.innerText = totalTruncated;
+    const eeEl = document.getElementById('eval-error-stat');
+    if (eeEl) eeEl.innerText = totalEvalErrors;
 
     throughputHistory.push({ time: new Date(), totalTokens });
     if (throughputHistory.length > 40) throughputHistory.shift();
@@ -886,29 +1011,185 @@
   function renderLeaderboard(states) {
     const tbody = document.getElementById('leaderboard-tbody');
     const emptyNotice = document.getElementById('empty-leaderboard-notice');
-    if (states.length === 0) { if (emptyNotice) emptyNotice.style.display = 'table-row'; rowNodesMap.forEach(r => r.remove()); rowNodesMap.clear(); return; }
+
+    const liveMap = new Map();
+    (states || []).forEach(st => liveMap.set(st.name, st));
+
+    const combined = [];
+
+    // 1. Add historical/saved models from results/latest.json
+    Object.entries(savedResults).forEach(([mname, mdata]) => {
+      if (liveMap.has(mname)) return; // Live model overrides saved model with same name during run
+      const summary = (mdata && mdata.summary) ? mdata.summary : {};
+      const score = (typeof summary.overall_score === 'number') ? summary.overall_score : null;
+      combined.push({
+        name: mname,
+        id: (mdata && mdata.model_id) ? mdata.model_id : mname,
+        thinking_effort: (mdata && mdata.thinking_effort) ? mdata.thinking_effort : null,
+        accuracy: score,
+        scored: 'Completed',
+        q_total: '—',
+        total_tokens: summary.total_all_tokens || 0,
+        avg_tps: summary.avg_tokens_per_second || null,
+        status: 'Saved',
+        is_live: false,
+        is_finished: true,
+        is_failed: false,
+      });
+    });
+
+    // 2. Add active live models from current run
+    (states || []).forEach(st => {
+      combined.push({
+        name: st.name,
+        id: st.id,
+        thinking_effort: st.thinking_effort || null,
+        accuracy: st.accuracy,
+        scored: st.scored != null ? `${st.scored}/${st.q_total}` : '0/0',
+        q_total: st.q_total,
+        total_tokens: st.total_tokens || 0,
+        avg_tps: st.avg_tps,
+        status: st.status || (st.is_finished ? 'Finished' : 'Running'),
+        is_live: true,
+        is_finished: !!st.is_finished,
+        is_failed: !!st.is_failed,
+      });
+    });
+
+    // Update counts badge
+    const liveCount = combined.filter(m => m.is_live).length;
+    const savedCount = combined.filter(m => !m.is_live).length;
+    const badge = document.getElementById('leaderboard-counts-badge');
+    if (badge) {
+      badge.textContent = `${liveCount} Live • ${savedCount} Saved`;
+    }
+
+    // Filter models based on active filter pill
+    let filtered = combined;
+    if (currentLeaderboardFilter === 'live') {
+      filtered = combined.filter(m => m.is_live);
+    } else if (currentLeaderboardFilter === 'saved') {
+      filtered = combined.filter(m => !m.is_live);
+    }
+
+    if (filtered.length === 0) {
+      if (emptyNotice) emptyNotice.style.display = 'table-row';
+      rowNodesMap.forEach(r => r.remove());
+      rowNodesMap.clear();
+      return;
+    }
     if (emptyNotice) emptyNotice.style.display = 'none';
-    const sorted = [...states].sort((a, b) => (b.accuracy || -1) - (a.accuracy || -1));
+
+    // Sort descending by accuracy/score
+    const sorted = [...filtered].sort((a, b) => {
+      const scoreA = a.accuracy != null ? a.accuracy : -1;
+      const scoreB = b.accuracy != null ? b.accuracy : -1;
+      if (scoreB !== scoreA) return scoreB - scoreA;
+      if (a.is_live !== b.is_live) return a.is_live ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    // Record initial Y positions for FLIP animation
     const firstPositions = new Map();
-    rowNodesMap.forEach((row, mname) => { firstPositions.set(mname, row.getBoundingClientRect().top); });
-    const currentNames = new Set(states.map(st => st.name));
-    for (const [mname, row] of rowNodesMap.entries()) { if (!currentNames.has(mname)) { row.remove(); rowNodesMap.delete(mname); } }
+    rowNodesMap.forEach((row, mname) => {
+      firstPositions.set(mname, row.getBoundingClientRect().top);
+    });
+
+    // Remove rows no longer present in sorted
+    const currentNames = new Set(sorted.map(m => m.name));
+    for (const [mname, row] of rowNodesMap.entries()) {
+      if (!currentNames.has(mname)) {
+        row.remove();
+        rowNodesMap.delete(mname);
+      }
+    }
+
     const medals = ['🥇 1st', '🥈 2nd', '🥉 3rd'];
+
     sorted.forEach((st, idx) => {
       let row = rowNodesMap.get(st.name);
-      if (!row) { row = document.createElement('tr'); rowNodesMap.set(st.name, row); }
+      const isNew = !row;
+      if (!row) {
+        row = document.createElement('tr');
+        rowNodesMap.set(st.name, row);
+      }
+
+      // Check for rank change
+      const prevRank = lastRanks.get(st.name);
+      lastRanks.set(st.name, idx);
+
+      let rankChangeClass = '';
+      if (prevRank !== undefined && prevRank !== idx && !isNew) {
+        rankChangeClass = idx < prevRank ? 'rank-up' : 'rank-down';
+      }
+
+      // Row styling
+      if (st.is_live) {
+        row.className = st.is_finished
+          ? `live-row ${rankChangeClass}`
+          : `live-row pulse-glow ${rankChangeClass}`;
+      } else {
+        row.className = `saved-row ${rankChangeClass}`;
+      }
+
       const accPct = st.accuracy != null ? (st.accuracy * 100).toFixed(1) : 'N/A';
-      const accNum = st.accuracy != null ? st.accuracy * 100 : 0;
+      const accNum = st.accuracy != null ? (st.accuracy * 100) : 0;
+
+      const histStats = getHistoryStats(st.name);
+      let rangeHtml = '';
+      if (histStats) {
+        const pm = (histStats.stddev * 100).toFixed(1);
+        const lo = (histStats.min * 100).toFixed(1);
+        const hi = (histStats.max * 100).toFixed(1);
+        rangeHtml = `<div style="font-size:0.68rem; color:var(--text-dim); margin-top:2px;" title="Across ${histStats.runs} runs: ${lo}% – ${hi}% (σ=${pm}%)">` +
+          `±${pm}% <span style="opacity:0.7">(${lo}–${hi}%, ${histStats.runs} runs)</span></div>`;
+      }
+
+      // Status badge
+      let badgeHtml = '';
+      if (!st.is_live) {
+        badgeHtml = '<span class="status-badge saved">🏛️ Saved</span>';
+      } else if (st.is_failed) {
+        badgeHtml = '<span class="status-badge failed">❌ Failed</span>';
+      } else if (st.is_finished) {
+        badgeHtml = '<span class="status-badge finished">✅ Done</span>';
+      } else {
+        badgeHtml = '<span class="status-badge live">⚡ LIVE</span>';
+      }
+
+      const thinkingBadge = st.thinking_effort
+        ? `<span style="font-size:0.7rem; opacity:0.75; background:rgba(99,102,241,0.2); color:var(--accent-primary); padding:0.1rem 0.35rem; border-radius:4px; margin-left:0.35rem;" title="Thinking effort: ${st.thinking_effort}">🧠 ${st.thinking_effort}</span>`
+        : '';
+
       row.innerHTML = `
-        <td><strong>${medals[idx] || (idx+1)+'th'}</strong></td>
-        <td><strong>${escapeHtml(st.name)}</strong></td>
-        <td><span style="color:var(--accent-green); font-weight:700">${accPct}%</span><div class="table-score-bar-bg"><div class="table-score-bar-fill" style="width:${accNum}%"></div></div></td>
-        <td>${st.scored}/${st.q_total}</td>
-        <td>${(st.total_tokens||0).toLocaleString()}</td>
-        <td>${st.avg_tps ? st.avg_tps+'/s' : '—'}</td>
-        <td><span class="status-badge ${st.is_failed?'failed':(st.is_finished?'finished':'running')}">${st.status||'Running'}</span></td>`;
+        <td><strong style="${idx < 3 ? 'color:var(--accent-amber); font-size:0.95rem;' : ''}">${medals[idx] || (idx+1)+'th'}</strong></td>
+        <td>
+          <div style="font-weight:700; display:flex; align-items:center;">
+            ${escapeHtml(st.name)}${thinkingBadge}
+          </div>
+          <div style="font-size:0.72rem; color:var(--text-dim); font-family:'JetBrains Mono', monospace;">${escapeHtml(st.id)}</div>
+        </td>
+        <td>
+          <span style="color:${st.accuracy != null ? 'var(--accent-green)' : 'var(--text-dim)'}; font-weight:700;">${accPct}${accPct !== 'N/A' ? '%' : ''}</span>
+          ${rangeHtml}
+          <div class="table-score-bar-bg"><div class="table-score-bar-fill" style="width:${accNum}%; ${st.is_live && !st.is_finished ? 'background:linear-gradient(90deg, var(--accent-cyan), var(--accent-green));' : ''}"></div></div>
+        </td>
+        <td>${st.scored}</td>
+        <td>${(st.total_tokens || 0).toLocaleString()}</td>
+        <td>${st.avg_tps ? st.avg_tps + '/s' : '—'}</td>
+        <td>${badgeHtml}</td>`;
+
       tbody.appendChild(row);
+
+      // Remove rank flash classes after animation completes
+      if (rankChangeClass) {
+        setTimeout(() => {
+          row.classList.remove('rank-up', 'rank-down');
+        }, 900);
+      }
     });
+
+    // FLIP smooth animation for rank reordering
     if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       sorted.forEach(st => {
         const row = rowNodesMap.get(st.name);
@@ -917,18 +1198,76 @@
           const lastY = row.getBoundingClientRect().top;
           const deltaY = firstY - lastY;
           if (deltaY !== 0) {
-            row.style.transform = `translateY(${deltaY}px)`; row.style.transition = 'none';
-            requestAnimationFrame(() => { row.style.transition = 'transform 0.4s ease-out'; row.style.transform = 'translateY(0)'; });
+            row.style.transform = `translateY(${deltaY}px)`;
+            row.style.transition = 'none';
+            requestAnimationFrame(() => {
+              row.style.transition = 'transform 0.45s cubic-bezier(0.2, 0, 0, 1)';
+              row.style.transform = 'translateY(0)';
+            });
           }
         }
       });
     }
   }
 
+  async function openInspector(modelName, benchName) {
+    const modal = document.getElementById('inspector-modal');
+    const title = document.getElementById('inspector-title');
+    const body = document.getElementById('inspector-body');
+    modal.style.display = 'flex';
+    title.innerText = `Question Inspector — ${modelName} ${benchName ? '(' + benchName + ')' : ''}`;
+    body.innerHTML = '<div style="color:var(--text-dim); padding:1rem;">Loading question details...</div>';
+
+    try {
+      const url = `/api/model-questions?model=${encodeURIComponent(modelName)}${benchName ? '&benchmark=' + encodeURIComponent(benchName) : ''}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const questions = data.questions || [];
+      if (questions.length === 0) {
+        body.innerHTML = '<div style="color:var(--text-dim); padding:1rem;">No question details available yet.</div>';
+        return;
+      }
+      body.innerHTML = questions.map(q => {
+        let statusBadge = `<span class="status-badge ${q.status}">${q.status}</span>`;
+        if (q.is_truncated) statusBadge += ` <span class="status-badge" style="background:rgba(168,85,247,0.2); color:#a855f7; border:1px solid #a855f7">✂️ Truncated (${q.finish_reason || 'length'})</span>`;
+        return `
+          <div style="background:rgba(15,23,42,0.8); border:1px solid var(--border-color); border-radius:10px; padding:0.85rem; display:flex; flex-direction:column; gap:0.5rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <strong>Q#${q.index} ${q.benchmark ? '[' + q.benchmark + ']' : ''}</strong>
+              <div style="display:flex; gap:0.5rem; align-items:center;">${statusBadge} <span style="font-weight:700">Score: ${q.score}</span></div>
+            </div>
+            <div style="font-size:0.8rem; color:var(--text-muted);"><strong>Prompt:</strong> ${escapeHtml(q.prompt || '')}</div>
+            <div style="font-size:0.8rem; color:var(--text-main); background:rgba(9,13,22,0.9); padding:0.5rem; border-radius:6px; font-family:'JetBrains Mono',monospace;">
+              <strong>Response:</strong> ${escapeHtml(q.response_text || '')}
+            </div>
+            ${q.error_msg ? `<div style="color:var(--accent-rose); font-size:0.78rem;"><strong>Error:</strong> ${escapeHtml(q.error_msg)}</div>` : ''}
+          </div>`;
+      }).join('');
+    } catch (e) {
+      body.innerHTML = `<div style="color:var(--accent-rose); padding:1rem;">Failed to load question details: ${e}</div>`;
+    }
+  }
+
+  function closeInspector() {
+    document.getElementById('inspector-modal').style.display = 'none';
+  }
+
   loadConfig();
   loadSavedModels();
+  loadSavedResults();
+  loadRunHistory();
   loadEnvKeys();
   initStream();
 </script>
+
+<div id="inspector-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:1000; align-items:center; justify-content:center; backdrop-filter:blur(8px);">
+  <div class="modal-content" style="width: 800px; max-width: 95vw; max-height: 90vh;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h3 style="font-family:'Outfit',sans-serif; color:var(--text-main)" id="inspector-title">Question Inspector</h3>
+      <button class="btn btn-secondary btn-sm" onclick="closeInspector()">✕ Close</button>
+    </div>
+    <div id="inspector-body" style="overflow-y:auto; display:flex; flex-direction:column; gap:1rem;"></div>
+  </div>
+</div>
 </body>
 </html>

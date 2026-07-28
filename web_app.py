@@ -31,7 +31,7 @@ from lite_bench.config import Config, ModelConfig, Settings, load_config
 from lite_bench.engine import DefaultEngineCallbacks, run_engine
 from lite_bench.metadata import BENCHMARK_INFO, CATEGORY_ICONS, CATEGORY_LABELS
 from lite_bench.readme_gen import write_readme
-from lite_bench.results_store import load_latest_results
+from lite_bench.results_store import append_run_history, load_latest_results, load_run_history
 
 ROOT_DIR = Path(__file__).parent.resolve()
 WEB_DIR = ROOT_DIR / "web"
@@ -131,6 +131,10 @@ class LiveModelState:
     output_tokens: int = 0
     thinking_tokens: int = 0
     total_tokens: int = 0
+    rate_limit_count: int = 0
+    truncated_count: int = 0
+    provider_error_count: int = 0
+    eval_error_count: int = 0
     avg_tps: float | None = None
     latest_snippet: str = ""
     last_error: str | None = None
@@ -177,6 +181,9 @@ class EngineCallbacksBridge(DefaultEngineCallbacks):
         with self.engine.state_lock:
             state = self.engine.states.get(model_name)
             if state:
+                err_str = str(info.get("error", "")).lower()
+                if "429" in err_str or "rate limit" in err_str:
+                    state.rate_limit_count += 1
                 state.retry_note = (
                     f"⏳ Q#{info.get('question_id', 0)} attempt {info.get('attempt', '?')} failed "
                     f"({info.get('error', '')}); retrying in {info.get('backoff', 0):.0f}s"
@@ -209,13 +216,19 @@ class EngineCallbacksBridge(DefaultEngineCallbacks):
             # concurrency, so count completions instead of using the id.
             state.q_index += 1
             state.retry_note = None
+            if detail.get("is_truncated"):
+                state.truncated_count += 1
+
             # Match the engine's accounting: only success/eval_error are scored;
             # provider errors are failures, not zeros in the accuracy average.
             if status in ("success", "eval_error"):
                 state.scored += 1
                 state.correct += score
-            if status in ("error", "eval_error"):
+            if status == "eval_error":
+                state.eval_error_count += 1
+            if status == "error":
                 state.failed += 1
+                state.provider_error_count += 1
 
             state.input_tokens += detail.get("input_tokens", 0)
             state.output_tokens += detail.get("output_tokens", 0)
@@ -243,6 +256,7 @@ class EngineCallbacksBridge(DefaultEngineCallbacks):
 
             q_entry = {
                 "index": qi,
+                "benchmark": bench_name,
                 "prompt": detail.get("prompt", "")[:300],
                 "status": status,
                 "score": score,
@@ -252,6 +266,8 @@ class EngineCallbacksBridge(DefaultEngineCallbacks):
                 "output_tokens": detail.get("output_tokens", 0),
                 "thinking_tokens": detail.get("thinking_tokens", 0),
                 "total_tokens": detail.get("total_tokens", 0),
+                "finish_reason": detail.get("finish_reason"),
+                "is_truncated": bool(detail.get("is_truncated")),
                 "time_ms": detail.get("total_time_ms"),
                 "tps": tps,
                 "cost_usd": detail.get("cost_usd"),
@@ -479,6 +495,15 @@ class DashboardEngine:
                             self._log_locked("⛔ Benchmark run force-stopped.")
                         else:
                             self._log_locked("✅ Benchmark run finished.")
+                            try:
+                                append_run_history(
+                                    self.results,
+                                    self.current_config,
+                                    self.current_config.settings.results_dir,
+                                )
+                                self._log_locked("📜 Run snapshot saved to history.")
+                            except Exception as hist_err:
+                                self._log_locked(f"⚠️ Failed to save run history: {hist_err}")
             except Exception as e:
                 self.log(f"❌ Error during benchmark execution: {e}")
             finally:
@@ -612,11 +637,57 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             self._send_json(ENGINE.get_status_dict())
             return
 
+        if path == "/api/model-questions":
+            query = dict(qc.split("=", 1) for qc in url.query.split("&") if "=" in qc)
+            model_name = query.get("model")
+            bench_name = query.get("benchmark")
+            if not model_name:
+                self._send_json({"error": "Missing model parameter"}, status=400)
+                return
+
+            questions_list = []
+            with ENGINE.state_lock:
+                state = ENGINE.states.get(model_name)
+                if state:
+                    questions_list = list(state.questions)
+
+            if not questions_list:
+                try:
+                    config = load_config(CONFIG_FILE)
+                    latest = load_latest_results(config, _latest_results_path(config))
+                    mdata = latest.get(model_name, {})
+                    if bench_name and bench_name in mdata:
+                        questions_list = mdata[bench_name].get("details", [])
+                    elif not bench_name:
+                        for bk, bv in mdata.items():
+                            if isinstance(bv, dict) and "details" in bv:
+                                questions_list.extend(bv["details"])
+                except Exception:
+                    pass
+
+            if bench_name:
+                questions_list = [
+                    q for q in questions_list
+                    if q.get("benchmark") == bench_name or not q.get("benchmark")
+                ]
+
+            self._send_json({"model": model_name, "benchmark": bench_name, "questions": questions_list})
+            return
+
         if path == "/api/results":
             try:
                 config = load_config(CONFIG_FILE)
                 latest = load_latest_results(config, _latest_results_path(config))
                 self._send_json({"models": latest})
+            except Exception as e:
+                self._send_json({"error": str(e)}, status=500)
+            return
+
+        if path == "/api/history":
+            try:
+                config = load_config(CONFIG_FILE)
+                runs = load_run_history(str(_abs(config.settings.results_dir)))
+                self._send_json({"runs": runs})
             except Exception as e:
                 self._send_json({"error": str(e)}, status=500)
             return
@@ -809,6 +880,12 @@ def main() -> None:
     except OSError as e:
         sys.exit(f"❌ Cannot bind {args.host}:{args.port} — is the port already in use? ({e})")
 
+    # Per-request handler threads (notably the long-lived /api/events SSE loop)
+    # must be daemons so they never hold the interpreter open when the console
+    # is closed. ThreadingHTTPServer already defaults to this, but set it
+    # explicitly so a future base-class change cannot reintroduce the hang.
+    httpd.daemon_threads = True
+
     # 0.0.0.0/:: are not navigable addresses in a browser; open loopback instead.
     browser_host = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
     url = f"http://{browser_host}:{args.port}/"
@@ -821,7 +898,19 @@ def main() -> None:
         httpd.serve_forever()
     except KeyboardInterrupt:
         print("\nServer stopped.")
-        sys.exit(0)
+    except SystemExit:
+        # Raised by Python's default handler on Windows CTRL_CLOSE_EVENT (e.g.
+        # closing the terminal tab) and on os._exit-free console teardown.
+        # Treat it as a normal shutdown instead of letting it escape uncaught.
+        print("\nConsole closed — shutting down.")
+    finally:
+        # Always release the listening socket and stop the accept loop so the
+        # process can exit cleanly instead of lingering as an unclosable tab.
+        try:
+            httpd.shutdown()
+        finally:
+            httpd.server_close()
+    sys.exit(0)
 
 
 if __name__ == "__main__":

@@ -23,6 +23,18 @@ console = Console()
 # ---------------------------------------------------------------------------
 
 
+def _clean_latex(text: str) -> str:
+    if not text:
+        return text
+    # Strip common LaTeX formatting wrappers: \mathbf{}, \mathrm{}, \text{}, \textbf{}, \mathit{}, etc.
+    cleaned = re.sub(
+        r"\\(?:mathbf|mathrm|text|textbf|mathit|mathsf|mathtt)\{([^{}]+)\}", r"\1", text
+    )
+    cleaned = re.sub(r"\\(?:left|right|displaystyle)", "", cleaned)
+    cleaned = cleaned.replace("$", "").strip()
+    return cleaned
+
+
 def _strip_code_blocks(text: str) -> str:
     text = text.strip()
     # First search for explicit markdown python/py code blocks
@@ -49,12 +61,14 @@ def _extract_number(text: str) -> str | None:
 
     boxed = _extract_boxed(text)
     if boxed:
-        m_boxed = re.search(r"^-?[\d,]+(?:\.\d+)?$", boxed.replace(",", "").strip())
+        cleaned_boxed = _clean_latex(boxed)
+        m_boxed = re.search(r"^-?[\d,]+(?:\.\d+)?$", cleaned_boxed.replace(",", "").strip())
         if m_boxed:
             return m_boxed.group(0)
 
     # Avoid extracting isolated digits from LaTeX fractions like \frac{3}{5}, \dfrac{3}{5}, \tfrac{3}{5}
     cleaned = re.sub(r"\\(?:d|t)?frac\{[^{}]+\}\{[^{}]+\}", "", text)
+    cleaned = _clean_latex(cleaned)
     # The lookahead deliberately allows a trailing sentence period ("...is 42.")
     # while the lookbehind still stops us splitting decimals like 3.14.
     nums = re.findall(r"(?<![\d\w.-])-?[\d,]+(?:\.\d+)?(?![\d\w-])", cleaned)
@@ -72,11 +86,12 @@ def _candidate_letters(text: str) -> list[str]:
     """Single-letter option candidates in ``text``, minus prose false positives:
     the article "a"/"i" (always lowercase) and the pronoun "I" ("I think")."""
     out: list[str] = []
-    for m in re.finditer(r"\b([A-Ja-j])\b", text):
+    cleaned_text = _clean_latex(text)
+    for m in re.finditer(r"\b([A-Ja-j])\b", cleaned_text):
         tok = m.group(1)
         if tok in ("a", "i"):
             continue
-        if tok == "I" and _PRONOUN_I.match(text, m.start()):
+        if tok == "I" and _PRONOUN_I.match(cleaned_text, m.start()):
             continue
         out.append(tok)
     return out
@@ -89,8 +104,13 @@ def _extract_letter(response: str, valid: set[str] | None = None) -> str | None:
 
     # 1. Boxed content
     boxed = _extract_boxed(response)
-    if boxed and boxed.strip().upper() in valid_upper:
-        return boxed.strip().upper()
+    if boxed:
+        cleaned_boxed = _clean_latex(boxed).strip().upper()
+        if cleaned_boxed in valid_upper:
+            return cleaned_boxed
+        cands_boxed = _candidate_letters(cleaned_boxed)
+        if cands_boxed and cands_boxed[-1].upper() in valid_upper:
+            return cands_boxed[-1].upper()
 
     # 2. Explicit "answer/choice/option is X"
     matches = list(
@@ -107,7 +127,8 @@ def _extract_letter(response: str, valid: set[str] | None = None) -> str | None:
     #    cleanest "the answer is just the letter" signal; take the last such line.
     standalone = None
     for ln in lines:
-        m = re.fullmatch(r"\s*\(?([A-Ja-j])\)?[.\):]?\s*", ln)
+        cleaned_ln = _clean_latex(ln)
+        m = re.fullmatch(r"\s*\(?([A-Ja-j])\)?[.\):]?\s*", cleaned_ln)
         if m and m.group(1).upper() in valid_upper:
             standalone = m.group(1).upper()
     if standalone:
@@ -124,7 +145,7 @@ def _extract_letter(response: str, valid: set[str] | None = None) -> str | None:
         if letter.upper() in valid_upper:
             return letter.upper()
 
-    stripped = response.strip()
+    stripped = _clean_latex(response.strip())
     if stripped and stripped[0].upper() in valid_upper:
         return stripped[0].upper()
     return None
@@ -148,12 +169,13 @@ def _extract_boxed(text: str) -> str | None:
                     if open_braces == 0:
                         break
                 chars.append(c)
-            if chars and open_braces == 0:
-                return "".join(chars).strip()
+            # Support completed or truncated boxed sequences
+            if chars:
+                return _clean_latex("".join(chars).strip())
 
     m = re.findall(r"\\boxed\s*\{([^{}]+)\}", text)
     if m:
-        return m[-1].strip()
+        return _clean_latex(m[-1].strip())
     return None
 
 

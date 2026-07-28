@@ -22,3 +22,4 @@ custom_models.json
 charts/*.png
 sandbox_workspace/
 *.wsb
+AGENTS.md

@@ -227,6 +227,8 @@ def process_question(
         "total_time_ms": gen_result.total_time_ms,
         "tokens_per_second": gen_result.tokens_per_second,
         "cost_usd": gen_result.cost_usd,
+        "finish_reason": gen_result.finish_reason,
+        "is_truncated": gen_result.is_truncated,
         "prompt": prompt[:8000],
         "response": gen_result.text[:8000],
     }
@@ -312,6 +314,20 @@ def run_engine(
                     callbacks.on_event(model.name, f"No questions loaded for {bench_name}")
                     continue
 
+                # Benchmark Resumption Check: skip if already completed in loaded results
+                existing_b = results.get(model.name, {}).get(bench_name)
+                if isinstance(existing_b, dict) and "details" in existing_b:
+                    ex_details = existing_b.get("details", [])
+                    if len(ex_details) >= len(questions) and not any(
+                        d.get("status") == "cancelled" for d in ex_details if isinstance(d, dict)
+                    ):
+                        callbacks.on_event(
+                            model.name,
+                            f"Skipping {bench_name} (already completed in loaded results)",
+                        )
+                        callbacks.on_benchmark_done(model.name, bench_name, existing_b)
+                        continue
+
                 q_hash = compute_question_hash(questions)
                 callbacks.on_benchmark_start(model.name, bench_name, len(questions))
                 callbacks.on_event(
@@ -382,12 +398,12 @@ def run_engine(
                         f"Aborting remaining benchmarks for {model.name} due to fatal error",
                     )
 
-                # Summarize benchmark. When EVERY question was a provider failure
-                # (total_count == 0) there is no data, so record score=None rather
-                # than 0.0 — a fully-failed benchmark must be excluded from the
-                # category/overall averages, not counted as a hard zero (which the
-                # per-benchmark table already shows as "N/A").
+                # Summarize benchmark metrics cleanly.
                 scored = [d for d in details if d["status"] in ("success", "eval_error")]
+                eval_errors = [d for d in details if d["status"] == "eval_error"]
+                provider_errors = [d for d in details if d["status"] == "error"]
+                truncated_items = [d for d in details if d.get("is_truncated")]
+
                 correct_count = sum(d["score"] for d in scored)
                 total_count = len(scored)
                 score = (correct_count / total_count) if total_count > 0 else None
@@ -396,6 +412,9 @@ def run_engine(
                     "score": round(score, 4) if score is not None else None,
                     "correct": correct_count,
                     "total": total_count,
+                    "eval_error_count": len(eval_errors),
+                    "provider_error_count": len(provider_errors),
+                    "truncated_count": len(truncated_items),
                     "question_hash": q_hash,
                     "input_tokens": sum(d.get("input_tokens", 0) for d in details),
                     "output_tokens": sum(d.get("output_tokens", 0) for d in details),

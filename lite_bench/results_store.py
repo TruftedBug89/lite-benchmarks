@@ -199,8 +199,85 @@ def save_results(
     return str(target_path)
 
 
+HISTORY_FILENAME = "history.json"
+
+
+def _history_path(results_dir: str) -> Path:
+    return Path(results_dir) / HISTORY_FILENAME
+
+
+def append_run_history(results: dict, config: Config, results_dir: str = "results") -> None:
+    """Snapshot the current run's per-model summaries into history.json.
+
+    Each entry records a timestamp and a compact per-model score map so the
+    leaderboard can show a range (min–max / ±) across repeated runs of the
+    same model.  Old runs are never deleted."""
+    os.makedirs(results_dir, exist_ok=True)
+    hp = _history_path(results_dir)
+
+    history: list[dict] = []
+    if hp.is_file():
+        try:
+            data = json.loads(hp.read_text(encoding="utf-8"))
+            history = data if isinstance(data, list) else data.get("runs", [])
+        except (json.JSONDecodeError, OSError):
+            history = []
+
+    enabled_names = set(config.enabled_benchmarks().keys())
+    models_snapshot: dict[str, dict] = {}
+    for mname, mdata in results.items():
+        if not isinstance(mdata, dict):
+            continue
+        bench_scores: dict[str, float] = {}
+        for k in mdata:
+            if k in enabled_names and isinstance(mdata[k], dict) and isinstance(mdata[k].get("score"), (int, float)):
+                bench_scores[k] = mdata[k]["score"]
+        summary = mdata.get("summary", {})
+        overall = summary.get("overall_score")
+        if overall is None and bench_scores:
+            overall = config.overall_score(bench_scores)
+        models_snapshot[mname] = {
+            "overall_score": round(overall, 4) if overall is not None else None,
+            "benchmarks": {k: round(v, 4) for k, v in bench_scores.items()},
+        }
+
+    if not models_snapshot:
+        return
+
+    history.append({
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "models": models_snapshot,
+    })
+
+    tmp_name = None
+    try:
+        with tempfile.NamedTemporaryFile("w", dir=hp.parent, delete=False, encoding="utf-8") as tf:
+            json.dump(history, tf, indent=2, ensure_ascii=False)
+            tmp_name = tf.name
+        os.replace(tmp_name, hp)
+        tmp_name = None
+    finally:
+        if tmp_name is not None:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+
+
+def load_run_history(results_dir: str = "results") -> list[dict]:
+    """Return the list of historical run snapshots (newest last)."""
+    hp = _history_path(results_dir)
+    if not hp.is_file():
+        return []
+    try:
+        data = json.loads(hp.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else data.get("runs", [])
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
 def load_latest_results(config: Config, path: str | Path = "results/latest.json") -> dict:
-    """Load latest results JSON, stripping zombie benchmark keys not in current config."""
+    """Load latest results JSON, preserving all configured benchmark keys while dropping unknown zombie keys."""
     p = Path(path)
     if not p.is_file():
         return {}
@@ -223,7 +300,7 @@ def load_latest_results(config: Config, path: str | Path = "results/latest.json"
     if not isinstance(models, dict):
         return {}
 
-    enabled_keys = set(config.enabled_benchmarks().keys())
+    all_benchmarks = set(config.benchmarks.keys())
     cleaned_models: dict = {}
 
     for mname, mdata in models.items():
@@ -233,7 +310,7 @@ def load_latest_results(config: Config, path: str | Path = "results/latest.json"
         for k, v in mdata.items():
             if k in ("model_id", "thinking_effort", "summary"):
                 cleaned_mdata[k] = v
-            elif k in enabled_keys:
+            elif k in all_benchmarks:
                 cleaned_mdata[k] = v
             else:
                 console.print(f"[dim]Dropping stale benchmark key {k!r} from model {mname!r}[/dim]")

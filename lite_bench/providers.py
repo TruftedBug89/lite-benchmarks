@@ -102,6 +102,11 @@ class GenerationResult:
     total_time_ms: float | None = None  # None for local models
     tokens_per_second: float | None = None  # None for local models
     cost_usd: float | None = None
+    finish_reason: str | None = None
+
+    @property
+    def is_truncated(self) -> bool:
+        return self.finish_reason == "length"
 
     @property
     def output_ratio(self) -> float:
@@ -123,6 +128,8 @@ class GenerationResult:
             "total_tokens": self.total_tokens,
             "output_ratio": round(self.output_ratio, 4),
         }
+        if self.finish_reason:
+            d["finish_reason"] = self.finish_reason
         if self.total_time_ms is not None:
             d["total_time_ms"] = round(self.total_time_ms, 1)
         if self.tokens_per_second is not None:
@@ -232,9 +239,14 @@ def generate(model: ModelConfig | str, prompt: str, settings: Settings) -> Gener
     choices = getattr(response, "choices", None)
     if not choices:
         raise RuntimeError("The provider returned no completion choices.")
-    content = getattr(getattr(choices[0], "message", None), "content", None)
+    choice = choices[0]
+    content = getattr(getattr(choice, "message", None), "content", None)
     if not isinstance(content, str):
         raise RuntimeError("The provider returned a completion without text content.")
+
+    finish_reason = getattr(choice, "finish_reason", None)
+    if isinstance(finish_reason, str):
+        finish_reason = finish_reason.lower()
 
     return GenerationResult(
         text=content,
@@ -245,4 +257,5 @@ def generate(model: ModelConfig | str, prompt: str, settings: Settings) -> Gener
         total_time_ms=time_ms,
         tokens_per_second=tps,
         cost_usd=cost_usd,
+        finish_reason=finish_reason,
     )

@@ -45,11 +45,25 @@ directory starts empty and is regenerated on the next run.
 ### Engine & providers
 - Reasoning-model telemetry (thinking tokens), retry-with-exponential-backoff + jitter,
   per-run checkpoint isolation, and None-score handling throughout.
+- **Wait for a good response**: with `max_retries <= 0` (new default), a failed question
+  stops advancing and retries transient provider errors (timeouts, 429, 5xx, connection
+  resets, empty responses) with exponential backoff until a good response arrives or the
+  user hits Force Stop. Stays visible in the dashboard via per-question retry notes and a
+  throttled system log. Permanent errors (context length, content filter) and fatal
+  auth/quota errors still give up immediately — they can never succeed. A positive
+  `max_retries` keeps the old capped behaviour.
+- **Interruptible backoff** (0.5s slices) so Force Stop unwinds during a retry wait instead
+  of running a hung question; stopped mid-wait questions record as `cancelled`.
 
 ### Web dashboard
 - Fixed startup blocker, CWD-relative asset paths, and robustness; fixed log-freeze,
   an `escapeAttr` XSS, and silent fetch failures in the SPA. `/api/run` validates
   Content-Type, Origin, and CSRF.
+- **Error visibility**: the live cards show a capped error/retry line (char-limited so the
+  grid stays readable) with the complete error available on hover; long provider
+  exceptions no longer flood the web log. Live progress is now the count of completed
+  questions (monotonic) instead of the out-of-order question id, and the scored/failed
+  accounting matches the engine (provider errors are failures, not zeros).
 
 ### Reports
 - `README.md` footer honors `SOURCE_DATE_EPOCH` (hermetic/reproducible builds); chart

@@ -40,7 +40,6 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     cat_names = list(config.categories.keys())
     model_names = [m for m in results if isinstance(results[m], dict)]
 
-    # ── Compute scores ──────────────────────────────────────────────
     bench_scores: dict[str, dict[str, float]] = {}
     cat_scores: dict[str, dict[str, float | None]] = {}
     overall: dict[str, float | None] = {}
@@ -70,7 +69,9 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
         total_think_tokens[mname] = sum(result.get("thinking_tokens", 0) for result in completed)
         total_all_tokens[mname] = sum(result.get("total_tokens", 0) for result in completed)
 
-        costs = [result.get("total_cost_usd") for result in completed if result.get("total_cost_usd") is not None]
+        costs = [
+            result.get("total_cost_usd") for result in completed if result.get("total_cost_usd") is not None
+        ]
         total_cost_usd[mname] = sum(costs) if costs else None
 
         tps_vals = [
@@ -97,25 +98,135 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
 
     num_benches = len(bench_names)
     num_cats = len(cat_names)
+    num_models = len(model_names)
 
-    # ── Header ──────────────────────────────────────────────────────
-    _a("# 🏆 Lite Benchmarks — Personal LLM Leaderboard")
+    # ── Hero ─────────────────────────────────────────────────────────
+    _a('<div align="center">')
     _a("")
-    _a("> **Small, repeatable samples of established benchmarks with programmatic scoring.")
-    _a("> No LLM-as-judge. Sampling and scoring are deterministic; model outputs may vary.**")
+    _a("# 🏆 Lite Benchmarks")
     _a("")
-    _a(f"This repo benchmarks LLMs on ~50 questions sampled from {num_benches} established benchmarks")
-    _a(f"grouped into {num_cats} core categories. Results, rankings, and charts below are")
-    _a("**auto-generated** after every run.")
+    _a("### Personal LLM Leaderboard & Benchmark Studio")
+    _a("")
+    _a(
+        "[![CI](https://img.shields.io/github/actions/workflow/status/TruftedBug89/lite-benchmarks/ci.yml"
+        "?branch=main&style=flat-square&logo=github&label=CI)]"
+        "(https://github.com/TruftedBug89/lite-benchmarks/actions)"
+    )
+    _a(
+        "[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)]"
+        "(https://opensource.org/licenses/MIT)"
+    )
+    _a(
+        "[![Python](https://img.shields.io/badge/Python-%E2%89%A53.10-blue?style=flat-square&logo=python&logoColor=white)]"
+        "(https://www.python.org)"
+    )
+    _a(f"![Benchmarks](https://img.shields.io/badge/Benchmarks-{num_benches}-green?style=flat-square)")
+    _a(f"![Categories](https://img.shields.io/badge/Categories-{num_cats}-purple?style=flat-square)")
+    _a(f"![Models](https://img.shields.io/badge/Models_tested-{num_models}-orange?style=flat-square)")
+    _a("![Version](https://img.shields.io/badge/version-0.2.0-red?style=flat-square)")
+    _a("")
+    _a(
+        "*Small, repeatable samples of established benchmarks with **100% programmatic scoring**. "
+        "No LLM-as-judge. Deterministic sampling. Sandboxed code execution.*"
+    )
+    _a("")
+    _a("</div>")
+    _a("")
+
+    # ── Features ─────────────────────────────────────────────────────
+    _a("## ✨ Why Lite Benchmarks?")
+    _a("")
+    _a("<table>")
+    _a("<tr>")
+    _a('<td width="50%">')
+    _a("")
+    _a("🎯 **Programmatic Scoring**")
+    _a("")
+    _a("Every answer is verified by code — regex extraction, unit test execution, exact match. Zero LLM-as-judge bias.")
+    _a("")
+    _a("</td>")
+    _a('<td width="50%">')
+    _a("")
+    _a("🔒 **3-Layer Sandboxed Execution**")
+    _a("")
+    _a("AST scan → hardened subprocess → Windows Job Object. Model code runs isolated with no API keys, no network, no escape.")
+    _a("")
+    _a("</td>")
+    _a("</tr>")
+    _a("<tr>")
+    _a('<td width="50%">')
+    _a("")
+    _a("🌐 **Web Dashboard**")
+    _a("")
+    _a("Select models, pick benchmarks, run, and generate reports — all from a local browser UI. No CLI wrangling.")
+    _a("")
+    _a("</td>")
+    _a('<td width="50%">')
+    _a("")
+    _a("🎲 **Deterministic Sampling**")
+    _a("")
+    _a("Fixed seed (42) random sampling means the exact same questions every run. Reproducible by design.")
+    _a("")
+    _a("</td>")
+    _a("</tr>")
+    _a("<tr>")
+    _a('<td width="50%">')
+    _a("")
+    _a("📊 **Statistical Rigor**")
+    _a("")
+    _a("Wilson score confidence intervals on every benchmark score. Know exactly how much noise is in the numbers.")
+    _a("")
+    _a("</td>")
+    _a('<td width="50%">')
+    _a("")
+    _a("💰 **Cost & Token Tracking**")
+    _a("")
+    _a("Per-model token breakdown (input/output/thinking), throughput (TPS), latency, and estimated API cost.")
+    _a("")
+    _a("</td>")
+    _a("</tr>")
+    _a("</table>")
+    _a("")
+
+    # ── Quick Start ──────────────────────────────────────────────────
+    _a("## ⚡ Quick Start")
+    _a("")
+    _a("```bash")
+    _a("pip install -e .[dev]    # install dependencies")
+    _a("py web_app.py            # launch dashboard → http://127.0.0.1:8000")
+    _a("```")
+    _a("")
+    _a("Then select models, pick benchmarks, hit **Run Benchmarks**, and **Generate Reports**.")
+    _a("")
+
+    # ── Table of Contents ────────────────────────────────────────────
+    _a("## 📑 Table of Contents")
+    _a("")
+    _a("- [Benchmarks](#-benchmarks)")
+    _a("- [Leaderboard](#-leaderboard)")
+    _a("- [Charts](#-charts)")
+    _a("- [Token Usage & Performance](#-token-usage--performance)")
+    _a("- [Architecture](#-architecture)")
+    _a("- [Methodology](#-methodology)")
+    _a("- [How to Run](#-how-to-run)")
+    _a("- [Adding Models](#-adding-models)")
+    _a("- [Project Structure](#-project-structure)")
     _a("")
 
     # ── Benchmarks ──────────────────────────────────────────────────
     _a("## 📝 Benchmarks")
     _a("")
+    _a(
+        f"{num_benches} established benchmarks, ~50 questions each, "
+        f"grouped into {num_cats} categories:"
+    )
+    _a("")
     _a("| Benchmark | Category | Full Dataset | Sampled | Verification | Source |")
     _a("|-----------|----------|:-----------:|:-------:|-------------|--------|")
     for bname in bench_names:
-        info = BENCHMARK_INFO.get(bname, {"display": bname, "category": "Other", "total": "N/A", "verification": "Auto", "source": "HF"})
+        info = BENCHMARK_INFO.get(
+            bname, {"display": bname, "category": "Other", "total": "N/A", "verification": "Auto", "source": "HF"}
+        )
         sampled = config.benchmarks[bname].num_samples
         _a(
             f"| **{info['display']}** | {info['category']} "
@@ -259,24 +370,53 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
         )
         _a("")
 
+    # ── Architecture ─────────────────────────────────────────────────
+    _a("## 🏗️ Architecture")
+    _a("")
+    _a("```mermaid")
+    _a("flowchart LR")
+    _a("    A[config.yaml] --> B[datasets.py<br/>HF sampling]")
+    _a("    B --> C[engine.py<br/>concurrent execution]")
+    _a("    C --> D[providers.py<br/>litellm calls]")
+    _a("    D --> E[benchmarks.py<br/>scoring & verification]")
+    _a("    E --> F[results_store.py<br/>schema v2 JSON]")
+    _a("    F --> G[charts.py<br/>matplotlib PNGs]")
+    _a("    F --> H[readme_gen.py<br/>this README]")
+    _a("")
+    _a("    C --> I[sandbox.py<br/>3-layer isolation]")
+    _a("    I --> E")
+    _a("```")
+    _a("")
+
     # ── Methodology ─────────────────────────────────────────────────
     _a("## 🔬 Methodology")
     _a("")
-    _a("### Sampling & Statistical Significance")
     sample_sizes = {config.benchmarks[b].num_samples for b in bench_names}
     sample_str = str(sample_sizes.pop()) if len(sample_sizes) == 1 else "varies"
+
+    _a("<details>")
+    _a("<summary><strong>📐 Sampling & Statistical Significance</strong></summary>")
+    _a("")
     _a(f"- **~{sample_str} questions** are sampled from each benchmark's full dataset")
     _a(
-        f"- Sampling uses a **fixed seed ({config.settings.seed})** via random sampling so exact questions are stable across runs"
+        f"- Sampling uses a **fixed seed ({config.settings.seed})** via random sampling "
+        "so exact questions are stable across runs"
     )
     _a(
-        "- Samples of n=50 have 95% confidence intervals of roughly ±7–14pp; treat small ranking gaps as noise"
+        "- Samples of n=50 have 95% confidence intervals of roughly ±7–14pp; "
+        "treat small ranking gaps as noise"
     )
     _a(
-        "- **Scoring v2 Notice**: Sampling and scoring strictness updated in v0.2.0; results are not directly comparable with pre-v0.2.0 runs"
+        "- **Scoring v2 Notice**: Sampling and scoring strictness updated in v0.2.0; "
+        "results are not directly comparable with pre-v0.2.0 runs"
     )
     _a("")
-    _a("### Scoring")
+    _a("</details>")
+    _a("")
+
+    _a("<details>")
+    _a("<summary><strong>✅ Scoring & Verification</strong></summary>")
+    _a("")
     _a("- **All scoring is programmatic** — no LLM-as-judge is used anywhere")
     _a(
         "- Code benchmarks require explicit opt-in (``allow_unsafe_code_execution``) "
@@ -288,31 +428,56 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
         "sandbox layer, so it fails closed even for direct callers."
     )
     _a("- Multiple-choice benchmarks extract the answer letter and compare to ground truth")
-    _a("- Math benchmarks extract boxed/numerical answers and evaluate via normalized string or numerical comparison")
+    _a(
+        "- Math benchmarks extract boxed/numerical answers and evaluate via "
+        "normalized string or numerical comparison"
+    )
     _a("- IFEval uses its 25 strict programmatic verifiers (word count, format, keywords, etc.)")
     _a("- Tau-Bench verifies tool function name AND argument dictionary match")
     _a("")
-    _a("### Category & Overall Scores")
+    _a("</details>")
+    _a("")
+
+    _a("<details>")
+    _a("<summary><strong>📊 Category & Overall Scores</strong></summary>")
+    _a("")
     _a("- **Category score** = average of its benchmark scores")
     for cat in cat_names:
         benches = config.categories.get(cat, [])
-        bench_labels = [BENCHMARK_INFO.get(b, {}).get("display", b) for b in benches if b in bench_names]
+        bench_labels = [
+            BENCHMARK_INFO.get(b, {}).get("display", b) for b in benches if b in bench_names
+        ]
         if bench_labels:
             icon = CATEGORY_ICONS.get(cat, "")
             _a(f"  - {icon} **{CATEGORY_LABELS.get(cat, cat)}** = avg({', '.join(bench_labels)})")
     _a("- **Overall score** = average of completed category scores (equal weight per category)")
     _a(
-        "- Provider failures are excluded and recorded separately; scorer exceptions score 0.0 without retrying provider"
+        "- Provider failures are excluded and recorded separately; "
+        "scorer exceptions score 0.0 without retrying provider"
     )
     _a("")
-    _a("### Inference Settings")
+    _a("</details>")
+    _a("")
+
+    _a("<details>")
+    _a("<summary><strong>⚙️ Inference Settings</strong></summary>")
+    _a("")
     _a(f"- `temperature`: {config.settings.temperature}")
     _a(f"- `max_tokens`: {config.settings.max_tokens}")
     _a(f"- `timeout`: {config.settings.request_timeout}s per request")
     if config.settings.max_retries > 0:
-        _a(f"- `retries`: up to {config.settings.max_retries} attempts with exponential backoff and jitter")
+        _a(
+            f"- `retries`: up to {config.settings.max_retries} attempts "
+            "with exponential backoff and jitter"
+        )
     else:
-        _a("- `retries`: transient errors retry with exponential backoff until a good response arrives (no cap); permanent errors (context length, content filter) are never retried")
+        _a(
+            "- `retries`: transient errors retry with exponential backoff until a good "
+            "response arrives (no cap); permanent errors (context length, content filter) "
+            "are never retried"
+        )
+    _a("")
+    _a("</details>")
     _a("")
 
     # ── How to run ──────────────────────────────────────────────────
@@ -358,9 +523,7 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     # ── Adding models ───────────────────────────────────────────────
     _a("## ➕ Adding Models")
     _a("")
-    _a(
-        "Edit `config.yaml` or add models directly in the Web UI:"
-    )
+    _a("Edit `config.yaml` or add models directly in the Web UI:")
     _a("")
     _a("```yaml")
     _a("models:")
@@ -405,7 +568,18 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     now = _now_utc_str()
     _a("---")
     _a("")
-    _a(f"*Auto-generated by [lite-benchmarks](.) on {now}. Use the Web Dashboard to update.*")
+    _a('<div align="center">')
+    _a("")
+    _a(
+        f"*Auto-generated by [lite-benchmarks](.) on {now} · "
+        "Licensed under [MIT](LICENSE) · "
+        "Built with [litellm](https://github.com/BerriAI/litellm) + "
+        "[HuggingFace Datasets](https://github.com/huggingface/datasets)*"
+    )
+    _a("")
+    _a("**⭐ Star this repo if you find it useful!**")
+    _a("")
+    _a("</div>")
     _a("")
 
     return "\n".join(L)
