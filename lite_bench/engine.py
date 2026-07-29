@@ -217,10 +217,28 @@ def process_question(
     # Separate evaluation try-block — evaluation errors score 0.0 and are never retried against provider
     try:
         score = float(bench_obj.evaluate(q, gen_result.text))
+        expected_answer = str(q.get("answer") or q.get("target") or "N/A")
+        extracted_answer = "N/A"
+        judge_response = f"Evaluated score: {score}"
+
+        # Populate rich visualizer metadata if available
+        if hasattr(bench_obj, "evaluate_detailed"):
+            try:
+                eval_info = bench_obj.evaluate_detailed(q, gen_result.text)
+                if isinstance(eval_info, dict):
+                    expected_answer = str(eval_info.get("expected_answer", expected_answer))
+                    extracted_answer = str(eval_info.get("extracted_answer", extracted_answer))
+                    judge_response = str(eval_info.get("judge_response", judge_response))
+            except Exception:
+                pass
+
         status = "success"
         err_msg = None
     except Exception as eval_exc:
         score = 0.0
+        expected_answer = str(q.get("answer") or q.get("target") or "")
+        extracted_answer = "N/A"
+        judge_response = f"Evaluator Error: {eval_exc}"
         status = "eval_error"
         err_msg = str(eval_exc)
         console.print(
@@ -231,6 +249,9 @@ def process_question(
         "question_id": qi,
         "status": status,
         "score": score,
+        "expected_answer": expected_answer,
+        "extracted_answer": extracted_answer,
+        "judge_response": judge_response,
         "input_tokens": gen_result.input_tokens,
         "output_tokens": gen_result.output_tokens,
         "thinking_tokens": gen_result.thinking_tokens,

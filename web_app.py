@@ -115,6 +115,9 @@ class QuestionStatus:
     prompt: str
     status: str = "pending"  # pending, running, success, eval_error, error
     score: float = 0.0
+    expected_answer: str = ""
+    extracted_answer: str = ""
+    judge_response: str = ""
     response_text: str = ""
     error_msg: str = ""
     input_tokens: int = 0
@@ -270,10 +273,13 @@ class EngineCallbacksBridge(DefaultEngineCallbacks):
             q_entry = {
                 "index": qi,
                 "benchmark": bench_name,
-                "prompt": detail.get("prompt", "")[:300],
+                "prompt": detail.get("prompt", "")[:8000],
                 "status": status,
                 "score": score,
-                "response_text": resp[:1000],
+                "expected_answer": detail.get("expected_answer", ""),
+                "extracted_answer": detail.get("extracted_answer", ""),
+                "judge_response": detail.get("judge_response", ""),
+                "response_text": resp[:8000],
                 "error_msg": error_msg[:2000],
                 "input_tokens": detail.get("input_tokens", 0),
                 "output_tokens": detail.get("output_tokens", 0),
@@ -610,6 +616,10 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
 
         if path == "/" or path == "/index.html":
             self._send_file(WEB_DIR / "index.html", "text/html; charset=utf-8")
+            return
+
+        if path == "/visualizer" or path == "/visualizer.html":
+            self._send_file(WEB_DIR / "visualizer.html", "text/html; charset=utf-8")
             return
 
         if path == "/api/config":

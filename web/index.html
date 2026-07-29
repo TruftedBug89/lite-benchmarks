@@ -355,6 +355,7 @@
       </div>
       <div class="throughput-chart-container"><canvas id="throughput-canvas"></canvas></div>
       <button class="btn btn-secondary btn-sm" onclick="generateReports()">📊 Reports</button>
+      <a href="/visualizer.html" target="_blank" class="btn btn-primary btn-sm" style="text-decoration:none;">🎯 Visualizer ↗</a>
     </div>
 
     <div>
@@ -1237,7 +1238,7 @@
     const title = document.getElementById('inspector-title');
     const body = document.getElementById('inspector-body');
     modal.style.display = 'flex';
-    title.innerText = `Question Inspector — ${modelName} ${benchName ? '(' + benchName + ')' : ''}`;
+    title.innerHTML = `Question Inspector — ${escapeHtml(modelName)} ${benchName ? '(' + escapeHtml(benchName) + ')' : ''} <a href="/visualizer.html?model=${encodeURIComponent(modelName)}${benchName ? '&benchmark=' + encodeURIComponent(benchName) : ''}" target="_blank" class="btn btn-primary btn-sm" style="text-decoration:none; margin-left:0.75rem;">Open Full Visualizer ↗</a>`;
     body.innerHTML = '<div style="color:var(--text-dim); padding:1rem;">Loading question details...</div>';
 
     try {
@@ -1250,18 +1251,29 @@
         return;
       }
       body.innerHTML = questions.map(q => {
+        const isPass = q.score >= 1.0;
         let statusBadge = `<span class="status-badge ${q.status}">${q.status}</span>`;
         if (q.is_truncated) statusBadge += ` <span class="status-badge" style="background:rgba(168,85,247,0.2); color:#a855f7; border:1px solid #a855f7">✂️ Truncated (${q.finish_reason || 'length'})</span>`;
         return `
           <div style="background:rgba(15,23,42,0.8); border:1px solid var(--border-color); border-radius:10px; padding:0.85rem; display:flex; flex-direction:column; gap:0.5rem;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
-              <strong>Q#${q.index} ${q.benchmark ? '[' + q.benchmark + ']' : ''}</strong>
-              <div style="display:flex; gap:0.5rem; align-items:center;">${statusBadge} <span style="font-weight:700">Score: ${q.score}</span></div>
+              <strong>Q#${q.index} ${q.benchmark ? '[' + escapeHtml(q.benchmark) + ']' : ''}</strong>
+              <div style="display:flex; gap:0.5rem; align-items:center;">
+                ${statusBadge}
+                <span style="font-weight:700; color:${isPass ? 'var(--accent-green)' : 'var(--accent-rose)'}; background:rgba(255,255,255,0.05); padding:0.2rem 0.5rem; border-radius:6px;">🌟 Points: ${q.score} / 1.0</span>
+                <a href="/visualizer.html?model=${encodeURIComponent(modelName)}&benchmark=${encodeURIComponent(q.benchmark || '')}&q=${q.index}" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;">Inspect ↗</a>
+              </div>
             </div>
             <div style="font-size:0.8rem; color:var(--text-muted);"><strong>Prompt:</strong> ${escapeHtml(q.prompt || '')}</div>
             <div style="font-size:0.8rem; color:var(--text-main); background:rgba(9,13,22,0.9); padding:0.5rem; border-radius:6px; font-family:'JetBrains Mono',monospace;">
               <strong>Response:</strong> ${escapeHtml(q.response_text || '')}
             </div>
+            ${q.expected_answer || q.extracted_answer || q.judge_response ? `
+              <div style="font-size:0.78rem; background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.2); border-radius:6px; padding:0.5rem; color:#cbd5e1; display:flex; flex-direction:column; gap:0.25rem;">
+                <div><strong>Target Answer:</strong> ${escapeHtml(q.expected_answer || 'N/A')}</div>
+                <div><strong>Extracted Answer:</strong> ${escapeHtml(q.extracted_answer || 'N/A')}</div>
+                <div><strong>Judge Output:</strong> ${escapeHtml(q.judge_response || 'Standard evaluation')}</div>
+              </div>` : ''}
             ${q.error_msg ? `<div style="color:var(--accent-rose); font-size:0.78rem;"><strong>Error:</strong> ${escapeHtml(q.error_msg)}</div>` : ''}
           </div>`;
       }).join('');

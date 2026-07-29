@@ -6,6 +6,7 @@ import json
 import math
 import random
 import re
+import textwrap
 from abc import ABC, abstractmethod
 
 from rich.console import Console
@@ -36,17 +37,17 @@ def _clean_latex(text: str) -> str:
 
 
 def _strip_code_blocks(text: str) -> str:
-    text = text.strip()
+    text = textwrap.dedent(text).strip()
     matches = re.findall(r"```(?:python|py)?[ \t]*\n(.*?)```", text, re.DOTALL)
     if matches:
         with_def = [m for m in matches if "def " in m or "class " in m or "assert" in m]
         if with_def:
-            return with_def[0].strip()
-        return max(matches, key=len).strip()
+            return textwrap.dedent(with_def[0]).strip()
+        return textwrap.dedent(max(matches, key=len)).strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:python|py)?\s*\n?", "", text)
         text = re.sub(r"\n?```\s*$", "", text)
-    return text.strip()
+    return textwrap.dedent(text).strip()
 
 
 def _extract_number(text: str) -> str | None:
@@ -195,6 +196,20 @@ def _execute_code(
     return ok
 
 
+def _execute_code_with_details(
+    untrusted_code: str, trusted_code: str, timeout: int, *, allow_execution: bool = False
+) -> tuple[bool, str]:
+    """Run sandboxed code execution and return (passed, detailed_log_message)."""
+    ok, violations = execute_sandboxed(
+        untrusted_code, trusted_code, timeout, allow_execution=allow_execution
+    )
+    if violations:
+        reason = f"Sandbox test execution rejected: {'; '.join(violations)}"
+        console.print(f"[yellow]{reason}[/yellow]")
+        return False, reason
+    return True, "Sandboxed execution succeeded. All assertions and unit tests passed cleanly."
+
+
 # ---------------------------------------------------------------------------
 # Base
 # ---------------------------------------------------------------------------
@@ -238,6 +253,24 @@ class BenchmarkBase(ABC):
     @abstractmethod
     def evaluate(self, question: dict, response: str) -> float: ...
 
+    def evaluate_detailed(self, question: dict, response: str) -> dict:
+        """Detailed evaluation returning score, expected answer, extracted answer, and judge logs."""
+        score = float(self.evaluate(question, response))
+        expected = str(
+            question.get("gold_letter")
+            or question.get("answer")
+            or question.get("target")
+            or question.get("canonical_solution")
+            or question.get("solution")
+            or "N/A"
+        )
+        return {
+            "score": score,
+            "expected_answer": expected,
+            "extracted_answer": "N/A",
+            "judge_response": f"Evaluated using {self.display_name or self.name} verifier. Earned score: {score}",
+        }
+
 
 # ---------------------------------------------------------------------------
 # HumanEval — code execution against built-in unit tests
@@ -269,6 +302,28 @@ class HumanEvalBenchmark(BenchmarkBase):
             code, q["test"], self.settings.code_exec_timeout,
             allow_execution=self.settings.allow_unsafe_code_execution,
         ) else 0.0
+
+    def evaluate_detailed(self, q: dict, response: str) -> dict:
+        code = _strip_code_blocks(response)
+        header = q["prompt"].split("\ndef ", 1)[0] if "\ndef " in q["prompt"] else ""
+        if code.lstrip().startswith("def "):
+            if header.strip():
+                full_code = header + "\n" + code
+            else:
+                full_code = code
+        else:
+            full_code = q["prompt"] + "\n" + code
+        ok, judge_log = _execute_code_with_details(
+            full_code, q["test"], self.settings.code_exec_timeout,
+            allow_execution=self.settings.allow_unsafe_code_execution,
+        )
+        score = 1.0 if ok else 0.0
+        return {
+            "score": score,
+            "expected_answer": q.get("test", "Unit test assertions"),
+            "extracted_answer": code,
+            "judge_response": judge_log,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -310,6 +365,23 @@ class MBPPBenchmark(BenchmarkBase):
             allow_execution=self.settings.allow_unsafe_code_execution,
         ) else 0.0
 
+    def evaluate_detailed(self, q: dict, response: str) -> dict:
+        code = _strip_code_blocks(response)
+        imports = "\n".join(q.get("test_imports", []))
+        tests = "\n".join(q.get("test_list", []))
+        trusted = "\n\n".join(p for p in [imports, tests] if p.strip())
+        ok, judge_log = _execute_code_with_details(
+            code, trusted, self.settings.code_exec_timeout,
+            allow_execution=self.settings.allow_unsafe_code_execution,
+        )
+        score = 1.0 if ok else 0.0
+        return {
+            "score": score,
+            "expected_answer": tests or "Assert tests",
+            "extracted_answer": code,
+            "judge_response": judge_log,
+        }
+
 
 # ---------------------------------------------------------------------------
 # BigCodeBench — practical Python with real libraries, unittest verification
@@ -344,6 +416,27 @@ class BigCodeBenchBenchmark(BenchmarkBase):
             code, test + runner, self.settings.code_exec_timeout,
             allow_execution=self.settings.allow_unsafe_code_execution,
         ) else 0.0
+
+    def evaluate_detailed(self, q: dict, response: str) -> dict:
+        code = _strip_code_blocks(response)
+        test = q.get("test", "")
+        runner = (
+            "\n\nimport sys, unittest\n"
+            "suite = unittest.TestLoader().loadTestsFromTestCase(TestCases)\n"
+            "result = unittest.TextTestRunner(verbosity=0).run(suite)\n"
+            "sys.exit(0 if result.wasSuccessful() else 1)\n"
+        )
+        ok, judge_log = _execute_code_with_details(
+            code, test + runner, self.settings.code_exec_timeout,
+            allow_execution=self.settings.allow_unsafe_code_execution,
+        )
+        score = 1.0 if ok else 0.0
+        return {
+            "score": score,
+            "expected_answer": test or "Unittest cases",
+            "extracted_answer": code,
+            "judge_response": judge_log,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -449,6 +542,23 @@ class GPQABenchmark(BenchmarkBase):
         pred = _extract_letter(response, {"A", "B", "C", "D"})
         return 1.0 if pred == gold else 0.0
 
+    def evaluate_detailed(self, q: dict, response: str) -> dict:
+        gold = q.get("gold_letter")
+        if not gold:
+            q = self.prepare(q)
+            gold = q.get("gold_letter")
+        if not gold:
+            return {"score": 0.0, "expected_answer": "N/A", "extracted_answer": "None", "judge_response": "Gold answer letter missing."}
+        pred = _extract_letter(response, {"A", "B", "C", "D"})
+        score = 1.0 if pred == gold else 0.0
+        verdict = "MATCHED (Correct answer)" if score == 1.0 else "MISMATCHED (Incorrect answer)"
+        return {
+            "score": score,
+            "expected_answer": str(gold),
+            "extracted_answer": str(pred or "None"),
+            "judge_response": f"Multiple Choice Verifier: Extracted '{pred or 'None'}', Expected target is '{gold}'. {verdict}",
+        }
+
 
 # ---------------------------------------------------------------------------
 # ARC-Challenge — grade-school science multiple choice
@@ -479,6 +589,25 @@ class ARCBenchmark(BenchmarkBase):
         pred = _extract_letter(response, valid)
         return 1.0 if pred == gold else 0.0
 
+    def evaluate_detailed(self, q: dict, response: str) -> dict:
+        labels = q["choices"]["label"]
+        answer_key = q["answerKey"]
+        try:
+            gold_idx = labels.index(answer_key)
+            gold = chr(65 + gold_idx)
+        except ValueError:
+            gold = str(answer_key)
+        valid = {chr(65 + i) for i in range(len(labels))}
+        pred = _extract_letter(response, valid)
+        score = 1.0 if pred == gold else 0.0
+        verdict = "MATCHED (Correct answer)" if score == 1.0 else "MISMATCHED (Incorrect answer)"
+        return {
+            "score": score,
+            "expected_answer": str(gold),
+            "extracted_answer": str(pred or "None"),
+            "judge_response": f"ARC Verifier: Extracted '{pred or 'None'}', Expected target is '{gold}'. {verdict}",
+        }
+
 
 # ---------------------------------------------------------------------------
 # GSM8K — numerical exact match
@@ -506,6 +635,18 @@ class GSM8KBenchmark(BenchmarkBase):
             return 1.0 if abs(float(gold) - float(pred)) < 1e-6 else 0.0
         except ValueError:
             return 0.0
+
+    def evaluate_detailed(self, q: dict, response: str) -> dict:
+        gold = _extract_number(q.get("answer", ""))
+        pred = _extract_number(response)
+        score = self.evaluate(q, response)
+        verdict = "MATCHED (Correct answer)" if score == 1.0 else "MISMATCHED (Incorrect answer)"
+        return {
+            "score": score,
+            "expected_answer": str(gold or q.get("answer", "")),
+            "extracted_answer": str(pred or "None"),
+            "judge_response": f"GSM8K Numerical Verifier: Extracted number '{pred or 'None'}', Target is '{gold or 'N/A'}'. {verdict}",
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -571,6 +712,27 @@ class MMLUProBenchmark(BenchmarkBase):
         pred = _extract_letter(response, valid)
         return 1.0 if pred == gold else 0.0
 
+    def evaluate_detailed(self, q: dict, response: str) -> dict:
+        ans_raw = q.get("answer")
+        if ans_raw is None:
+            ans_raw = q.get("answer_index")
+        if isinstance(ans_raw, int):
+            gold = chr(65 + ans_raw)
+        else:
+            gold_str = str(ans_raw).strip()
+            gold = chr(65 + int(gold_str)) if gold_str.isdigit() else gold_str.upper()
+        n = len(q.get("options", [])) or 10
+        valid = {chr(65 + i) for i in range(n)}
+        pred = _extract_letter(response, valid)
+        score = 1.0 if pred == gold else 0.0
+        verdict = "MATCHED (Correct answer)" if score == 1.0 else "MISMATCHED (Incorrect answer)"
+        return {
+            "score": score,
+            "expected_answer": str(gold),
+            "extracted_answer": str(pred or "None"),
+            "judge_response": f"MMLU-Pro Choice Verifier: Extracted '{pred or 'None'}', Expected target is '{gold}'. {verdict}",
+        }
+
 
 # ---------------------------------------------------------------------------
 # IFEval — programmatic instruction verifiers
@@ -590,6 +752,27 @@ class IFEvalBenchmark(BenchmarkBase):
         if not ids:
             return 0.0
         return 1.0 if verify_all(ids, response, kwargs) else 0.0
+
+    def evaluate_detailed(self, q: dict, response: str) -> dict:
+        ids = q.get("instruction_id_list", [])
+        kwargs = q.get("kwargs", [])
+        if not ids:
+            return {
+                "score": 0.0,
+                "expected_answer": "No instruction rules",
+                "extracted_answer": "N/A",
+                "judge_response": "Instruction list empty.",
+            }
+        passed = verify_all(ids, response, kwargs)
+        score = 1.0 if passed else 0.0
+        rules_str = f"IFEval Rules ({len(ids)}): {', '.join(ids)}"
+        verdict = "PASS (All instruction rules satisfied)" if passed else "FAIL (One or more instruction constraints violated)"
+        return {
+            "score": score,
+            "expected_answer": rules_str,
+            "extracted_answer": response[:150] + ("..." if len(response) > 150 else ""),
+            "judge_response": f"IFEval Rule Verifier: Checked {len(ids)} rule constraints. Result: {verdict}",
+        }
 
 
 # ---------------------------------------------------------------------------
