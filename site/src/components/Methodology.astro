@@ -1,0 +1,84 @@
+---
+import { summary } from "../lib/data";
+
+const items = [
+  {
+    icon: "🎲",
+    title: "Deterministic sampling",
+    body: [
+      `~50 questions are sampled from each benchmark's full dataset using a fixed seed (${summary.seed}) — the exact same questions on every run.`,
+      "Samples of n≈50 carry 95% Wilson confidence intervals of roughly ±7–14pp. Small ranking gaps are noise, not signal.",
+      "Sampling and scoring strictness follow schema v2 (v0.2.0+); older runs are not directly comparable.",
+    ],
+  },
+  {
+    icon: "✅",
+    title: "Programmatic scoring only",
+    body: [
+      "No LLM-as-judge anywhere. Answers are verified by code: letter extraction for multiple choice, boxed/numeric comparison for math, 25 strict verifiers for IFEval, function + argument matching for Tau-Bench.",
+      "Code benchmarks require explicit opt-in and run in a 3-layer sandbox: AST scan → hardened subprocess (no keys, no network, temp dir) → Windows Job Object confinement.",
+    ],
+  },
+  {
+    icon: "📊",
+    title: "Score computation",
+    body: [
+      "Category score = average of its benchmark scores across Coding, Science, Math, Knowledge, and Instruction.",
+      "Overall score = equal-weight average of completed category scores. Provider outages are excluded, not scored as zero, so one bad API day doesn't sink a model.",
+    ],
+  },
+  {
+    icon: "⚙️",
+    title: "Inference settings",
+    body: [
+      `temperature ${summary.temperature} · max_tokens ${summary.max_tokens} · 300s timeout per request.`,
+      "Transient errors retry with exponential backoff until a good response arrives; permanent errors (context length, content filter) are never retried.",
+    ],
+  },
+];
+---
+
+<section id="methodology" class="border-t border-edge">
+  <div class="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+    <div class="flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <p class="font-mono text-[11px] tracking-[0.28em] text-accent-2">TRUST THE NUMBERS</p>
+        <h2 class="mt-2 font-display text-2xl font-semibold tracking-tight sm:text-3xl">Methodology</h2>
+      </div>
+      <a
+        href="https://github.com/TruftedBug89/lite-benchmarks#-methodology"
+        class="font-mono text-xs text-accent-2 underline-offset-2 hover:underline"
+      >
+        full methodology in the README →
+      </a>
+    </div>
+
+    <div class="reveal mt-8 grid gap-4 md:grid-cols-2">
+      {items.map((it) => (
+        <details class="acc group rounded-xl border border-edge bg-panel p-5" open>
+          <summary class="flex items-center justify-between gap-4">
+            <span class="flex items-center gap-3">
+              <span class="grid size-8 shrink-0 place-items-center rounded-md border border-edge bg-panel-2 text-base">
+                {it.icon}
+              </span>
+              <span class="font-display text-[15px] font-semibold tracking-tight">{it.title}</span>
+            </span>
+            <span class="acc-icon font-mono text-lg text-muted" aria-hidden="true">+</span>
+          </summary>
+          <div class="acc-body">
+            <div>
+              <ul class="mt-4 space-y-2.5">
+                {it.body.map((line) => (
+                  <li class="flex gap-2.5 text-[13px] leading-relaxed text-muted">
+                    <span class="mt-[7px] size-1 shrink-0 rounded-full bg-accent-2" aria-hidden="true"></span>
+                    <span>{line}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </details>
+      ))}
+    </div>
+  </div>
+</section>

@@ -5,15 +5,11 @@ from __future__ import annotations
 import glob
 import os
 import unittest
-from pathlib import Path
 
 from lite_bench.benchmarks import (
     AIMEBenchmark,
-    GPQABenchmark,
     MATH500Benchmark,
     SciBenchBenchmark,
-    SuperGPQABenchmark,
-    _candidate_letters,
     _extract_boxed,
     _extract_letter,
     _extract_number,
@@ -21,10 +17,8 @@ from lite_bench.benchmarks import (
 )
 from lite_bench.config import BenchmarkConfig, Settings, load_config
 from lite_bench.ifeval_verifiers import (
-    verify_all,
     verify_forbidden_words,
     verify_json_format,
-    verify_keyword_frequency,
     verify_keywords_existence,
     verify_number_paragraphs,
     verify_number_words,

@@ -1,0 +1,60 @@
+---
+import { fmtDate, pct, summary } from "../lib/data";
+
+const nModels = summary.models.length;
+const nBench = summary.benchmarks.length;
+const nQuestions = summary.benchmarks.reduce((a, b) => a + b.sampled, 0);
+const champ = summary.models.find((m) => m.overall != null);
+
+const stats = [
+  { label: "Models tested", value: String(nModels), count: nModels, int: true },
+  { label: "Benchmarks", value: String(nBench), count: nBench, int: true },
+  { label: "Questions sampled", value: String(nQuestions), count: nQuestions, int: true },
+  { label: "Sampling seed", value: String(summary.seed), count: summary.seed, int: true },
+];
+---
+
+<section id="top" class="scanlines relative overflow-hidden border-b border-edge">
+  <div class="grid-bg absolute inset-0" aria-hidden="true"></div>
+  <div class="absolute -top-24 left-[12%] h-72 w-72 rounded-full bg-[var(--glow-1)] blur-[110px]" aria-hidden="true"></div>
+  <div class="absolute -top-10 right-[8%] h-80 w-80 rounded-full bg-[var(--glow-2)] blur-[120px]" aria-hidden="true"></div>
+
+  <div class="relative mx-auto max-w-6xl px-4 pb-14 pt-16 sm:px-6 sm:pb-16 sm:pt-24">
+    <p class="font-mono text-[11px] tracking-[0.28em] text-accent sm:text-xs">
+      PROGRAMMATIC LLM EVALUATION · NO LLM-AS-JUDGE
+    </p>
+
+    <h1 class="mt-5 max-w-3xl font-display text-4xl font-bold leading-[1.04] tracking-tight sm:text-6xl">
+      The leaderboard built on <span class="text-accent">verifiable</span> scores.
+    </h1>
+
+    <p class="mt-6 max-w-2xl text-[15px] leading-relaxed text-muted sm:text-base">
+      {nBench} established benchmarks, ~50 questions each, sampled with a fixed seed and scored
+      entirely by code — regex extraction, exact match, and sandboxed test execution.
+      Every number on this page is reproducible.
+    </p>
+
+    <dl class="reveal mt-12 flex flex-wrap items-start gap-x-10 gap-y-7 border-t border-edge pt-7">
+      {stats.map((s) => (
+        <div class="min-w-24">
+          <dd class="font-display text-3xl font-semibold tracking-tight tabular-nums">
+            <span data-count-to={s.count} data-format={s.int ? "int" : "dec"}>0</span>
+          </dd>
+          <dt class="mt-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted">{s.label}</dt>
+        </div>
+      ))}
+      <div class="min-w-40">
+        <dd class="font-display text-3xl font-semibold tracking-tight">
+          {champ ? pct(champ.overall) : "—"}
+        </dd>
+        <dt class="mt-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
+          Top overall · {champ?.name ?? "no runs yet"}
+        </dt>
+      </div>
+      <div class="min-w-32">
+        <dd class="font-mono text-lg font-medium leading-[2.1rem] text-fg">{fmtDate(summary.run_timestamp)}</dd>
+        <dt class="mt-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted">Last run (UTC)</dt>
+      </div>
+    </dl>
+  </div>
+</section>

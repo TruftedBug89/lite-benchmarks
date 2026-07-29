@@ -248,6 +248,9 @@ def generate(model: ModelConfig | str, prompt: str, settings: Settings) -> Gener
     if isinstance(finish_reason, str):
         finish_reason = finish_reason.lower()
 
+    if content.strip() == "" and finish_reason != "length":
+        raise RuntimeError("The provider returned an empty completion.")
+
     return GenerationResult(
         text=content,
         input_tokens=input_tokens,

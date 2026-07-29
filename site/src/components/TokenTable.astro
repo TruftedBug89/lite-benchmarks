@@ -1,0 +1,75 @@
+---
+import { fmtCost, fmtInt, fmtMs, fmtTps, modelColor, summary } from "../lib/data";
+
+const models = summary.models;
+
+const segWidth = (part: number, total: number) => (total > 0 ? `${((part / total) * 100).toFixed(1)}%` : "0%");
+---
+
+<section id="token-usage" class="border-t border-edge">
+  <div class="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+    <div class="flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <p class="font-mono text-[11px] tracking-[0.28em] text-accent-2">EFFICIENCY</p>
+        <h2 class="mt-2 font-display text-2xl font-semibold tracking-tight sm:text-3xl">Tokens & Performance</h2>
+      </div>
+      <div class="flex items-center gap-4 font-mono text-[11px] text-muted">
+        <span class="flex items-center gap-1.5"><span class="size-2 rounded-full" style="background:#60a5fa"></span>Input</span>
+        <span class="flex items-center gap-1.5"><span class="size-2 rounded-full" style="background:#a78bfa"></span>Thinking</span>
+        <span class="flex items-center gap-1.5"><span class="size-2 rounded-full" style="background:#2dd4bf"></span>Output</span>
+      </div>
+    </div>
+
+    <div class="reveal mt-8 overflow-hidden rounded-xl border border-edge bg-panel">
+      <div class="overflow-x-auto">
+        <table class="w-full min-w-[880px] border-collapse text-left text-sm">
+          <thead>
+            <tr class="border-b border-edge text-[11px] uppercase tracking-wider text-muted">
+              <th class="px-4 py-3.5 font-medium">Model</th>
+              <th class="px-4 py-3.5 text-right font-medium">Input</th>
+              <th class="px-4 py-3.5 text-right font-medium">Output</th>
+              <th class="px-4 py-3.5 text-right font-medium">Thinking</th>
+              <th class="px-4 py-3.5 text-right font-medium">Total</th>
+              <th class="px-4 py-3.5 font-medium">Mix</th>
+              <th class="px-4 py-3.5 text-right font-medium">TPS</th>
+              <th class="px-4 py-3.5 text-right font-medium">Avg time</th>
+              <th class="px-4 py-3.5 text-right font-medium">Est. cost</th>
+            </tr>
+          </thead>
+          <tbody>
+            {models.map((m, i) => (
+              <tr class="border-b border-edge/60 transition-colors last:border-0 hover:bg-panel-2/50">
+                <td class="px-4 py-3.5">
+                  <span class="flex items-center gap-2.5">
+                    <span class="size-2 shrink-0 rounded-full" style={`background:${modelColor(i)}`} aria-hidden="true"></span>
+                    <span class="text-sm font-medium">{m.name}</span>
+                  </span>
+                </td>
+                <td class="px-4 py-3.5 text-right font-mono text-[13px] tabular-nums text-muted">{fmtInt(m.tokens.input)}</td>
+                <td class="px-4 py-3.5 text-right font-mono text-[13px] tabular-nums text-muted">{fmtInt(m.tokens.output)}</td>
+                <td class="px-4 py-3.5 text-right font-mono text-[13px] tabular-nums text-muted">{fmtInt(m.tokens.thinking)}</td>
+                <td class="px-4 py-3.5 text-right font-mono text-[13px] font-semibold tabular-nums">{fmtInt(m.tokens.total)}</td>
+                <td class="px-4 py-3.5">
+                  <span
+                    class="flex h-2 w-28 overflow-hidden rounded-full bg-panel-2"
+                    title={`in ${fmtInt(m.tokens.input)} · think ${fmtInt(m.tokens.thinking)} · out ${fmtInt(m.tokens.output)}`}
+                  >
+                    <span style={`width:${segWidth(m.tokens.input, m.tokens.total)};background:#60a5fa`}></span>
+                    <span style={`width:${segWidth(m.tokens.thinking, m.tokens.total)};background:#a78bfa`}></span>
+                    <span style={`width:${segWidth(m.tokens.output, m.tokens.total)};background:#2dd4bf`}></span>
+                  </span>
+                </td>
+                <td class="px-4 py-3.5 text-right font-mono text-[13px] tabular-nums">{fmtTps(m.avg_tps)}</td>
+                <td class="px-4 py-3.5 text-right font-mono text-[13px] tabular-nums text-muted">{fmtMs(m.avg_time_ms)}</td>
+                <td class="px-4 py-3.5 text-right font-mono text-[13px] tabular-nums">{fmtCost(m.cost_usd)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <p class="mt-3 font-mono text-[11px] text-muted">
+      TPS = output tokens/second (cloud APIs only) · cost via LiteLLM tables · totals per full benchmark run
+    </p>
+  </div>
+</section>

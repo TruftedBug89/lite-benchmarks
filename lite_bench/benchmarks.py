@@ -37,17 +37,12 @@ def _clean_latex(text: str) -> str:
 
 def _strip_code_blocks(text: str) -> str:
     text = text.strip()
-    # First search for explicit markdown python/py code blocks
-    matches = re.findall(r"```(?:python|py)?\s*\n(.*?)\n```", text, re.DOTALL)
+    matches = re.findall(r"```(?:python|py)?[ \t]*\n(.*?)```", text, re.DOTALL)
     if matches:
-        # Prefer the first block that defines a function; otherwise the largest
-        # block (the solution is usually the biggest). Blindly taking the *last*
-        # block is wrong when a model appends a usage/demo snippet after the code.
-        with_def = [m for m in matches if "def " in m]
+        with_def = [m for m in matches if "def " in m or "class " in m or "assert" in m]
         if with_def:
             return with_def[0].strip()
         return max(matches, key=len).strip()
-    # Fallback for code blocks missing closing tags or simple triple backticks
     if text.startswith("```"):
         text = re.sub(r"^```(?:python|py)?\s*\n?", "", text)
         text = re.sub(r"\n?```\s*$", "", text)
@@ -102,7 +97,6 @@ def _extract_letter(response: str, valid: set[str] | None = None) -> str | None:
         valid = {"A", "B", "C", "D"}
     valid_upper = {v.upper() for v in valid}
 
-    # 1. Boxed content
     boxed = _extract_boxed(response)
     if boxed:
         cleaned_boxed = _clean_latex(boxed).strip().upper()
@@ -112,19 +106,16 @@ def _extract_letter(response: str, valid: set[str] | None = None) -> str | None:
         if cands_boxed and cands_boxed[-1].upper() in valid_upper:
             return cands_boxed[-1].upper()
 
-    # 2. Explicit "answer/choice/option is X"
-    matches = list(
-        re.finditer(r"(?:answer|choice|option)\s*(?:is|:)?\s*\(?([A-Ja-j])\)?", response, flags=re.IGNORECASE)
+    strong = list(
+        re.finditer(r"(?:answer|choice)\s*(?:is|:)\s*\(?([A-Ja-j])\)?", response, flags=re.IGNORECASE)
     )
-    if matches:
-        last_match = matches[-1].group(1).upper()
+    if strong:
+        last_match = strong[-1].group(1).upper()
         if last_match in valid_upper:
             return last_match
 
     lines = [ln for ln in response.strip().splitlines() if ln.strip()]
 
-    # 3. A line that is exactly a single (optionally punctuated) letter — the
-    #    cleanest "the answer is just the letter" signal; take the last such line.
     standalone = None
     for ln in lines:
         cleaned_ln = _clean_latex(ln)
@@ -134,20 +125,23 @@ def _extract_letter(response: str, valid: set[str] | None = None) -> str | None:
     if standalone:
         return standalone
 
-    # 4. Last non-empty line, ignoring prose articles/pronouns.
+    weak = list(
+        re.finditer(r"(?:answer|choice|option)\s*(?:is|:)?\s*\(?([A-Ja-j])\)?", response, flags=re.IGNORECASE)
+    )
+    if weak:
+        last_match = weak[-1].group(1).upper()
+        if last_match in valid_upper:
+            return last_match
+
     if lines:
         cands = _candidate_letters(lines[-1])
         if cands and cands[-1].upper() in valid_upper:
             return cands[-1].upper()
 
-    # 5. Whole-response reverse scan, again ignoring prose articles/pronouns.
     for letter in reversed(_candidate_letters(response)):
         if letter.upper() in valid_upper:
             return letter.upper()
 
-    stripped = _clean_latex(response.strip())
-    if stripped and stripped[0].upper() in valid_upper:
-        return stripped[0].upper()
     return None
 
 
@@ -265,7 +259,11 @@ class HumanEvalBenchmark(BenchmarkBase):
 
     def evaluate(self, q: dict, response: str) -> float:
         code = _strip_code_blocks(response)
-        if not code.lstrip().startswith("def "):
+        header = q["prompt"].split("\ndef ", 1)[0] if "\ndef " in q["prompt"] else ""
+        if code.lstrip().startswith("def "):
+            if header.strip():
+                code = header + "\n" + code
+        else:
             code = q["prompt"] + "\n" + code
         return 1.0 if _execute_code(
             code, q["test"], self.settings.code_exec_timeout,
@@ -285,6 +283,17 @@ class MBPPBenchmark(BenchmarkBase):
 
     def format_prompt(self, q: dict) -> str:
         prompt = q.get("prompt") or q.get("text", "")
+        code = q.get("code", "")
+        m = re.search(r"def\s+(\w+)\s*\(([^)]*)\)", code)
+        if m:
+            sig = f"def {m.group(1)}({m.group(2)}):"
+            return (
+                "Write a Python function to solve the following problem. "
+                "Return ONLY the code, no explanations, no markdown code blocks.\n"
+                f"Your function MUST be named exactly `{m.group(1)}`.\n\n"
+                f"{prompt}\n\n"
+                f"Function signature:\n{sig}"
+            )
         return (
             "Write a Python function to solve the following problem. "
             "Return ONLY the code, no explanations, no markdown code blocks.\n\n"
@@ -419,13 +428,15 @@ class GPQABenchmark(BenchmarkBase):
             return (
                 "Answer the following graduate-level science question.\n\n"
                 f"{question}\n\n{opts_str}\n\n"
-                "Reply with ONLY the letter (A, B, C, or D) of the correct answer."
+                "Reply with ONLY the letter (A, B, C, or D) of the correct answer. "
+                "State your final answer letter clearly at the end."
             )
 
         return (
             "Answer the following graduate-level science question.\n\n"
             f"{question}\n\n"
-            "Reply with ONLY the letter (A, B, C, or D) of the correct answer."
+            "Reply with ONLY the letter (A, B, C, or D) of the correct answer. "
+            "State your final answer letter clearly at the end."
         )
 
     def evaluate(self, q: dict, response: str) -> float:
@@ -537,7 +548,8 @@ class MMLUProBenchmark(BenchmarkBase):
         return (
             f"{header}Question: {q['question']}\n{opts}\n\n"
             f"Reply with ONLY the letter ({letters[0]}-{letters[len(options) - 1]}) "
-            "of the correct answer."
+            "of the correct answer. "
+            "State your final answer letter clearly at the end."
         )
 
     def evaluate(self, q: dict, response: str) -> float:
@@ -626,7 +638,8 @@ class SciBenchBenchmark(BenchmarkBase):
         return (
             "Solve the following college-level science problem step-by-step.\n\n"
             f"{text}{unit_str}\n\n"
-            "End your response with '\\boxed{<answer>}' containing your final numerical or symbol answer."
+            "End your response with '\\boxed{<answer>}' containing your final numerical or symbol answer. "
+            "Be concise. Give your final answer clearly."
         )
 
     def evaluate(self, q: dict, response: str) -> float:
@@ -675,7 +688,8 @@ class AIMEBenchmark(BenchmarkBase):
         problem = q.get("problem") or q.get("question", "")
         return (
             "Solve the following competition math problem step-by-step.\n"
-            "End your response with '\\boxed{<integer>}' containing your final integer answer.\n\n"
+            "End your response with '\\boxed{<integer>}' containing your final integer answer.\n"
+            "Be concise. Give your final answer clearly.\n\n"
             f"Problem: {problem}"
         )
 
@@ -729,7 +743,8 @@ class MATH500Benchmark(BenchmarkBase):
         problem = q.get("problem") or q.get("question", "")
         return (
             "Solve the following math problem step-by-step.\n"
-            "End your response with '\\boxed{<answer>}' containing your final answer.\n\n"
+            "End your response with '\\boxed{<answer>}' containing your final answer.\n"
+            "Be concise. Give your final answer clearly.\n\n"
             f"Problem: {problem}"
         )
 
@@ -815,13 +830,15 @@ class SuperGPQABenchmark(BenchmarkBase):
             return (
                 "Answer the following graduate-level multiple-choice question.\n\n"
                 f"{question}\n\n{opts_str}\n\n"
-                f"Reply with ONLY the letter (A-{max_letter}) of the correct answer."
+                f"Reply with ONLY the letter (A-{max_letter}) of the correct answer. "
+                "State your final answer letter clearly at the end."
             )
 
         return (
             "Answer the following graduate-level multiple-choice question.\n\n"
             f"{question}\n\n"
-            "Reply with ONLY the letter of the correct answer."
+            "Reply with ONLY the letter of the correct answer. "
+            "State your final answer letter clearly at the end."
         )
 
     def evaluate(self, q: dict, response: str) -> float:

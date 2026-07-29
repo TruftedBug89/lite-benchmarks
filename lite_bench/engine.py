@@ -22,7 +22,7 @@ console = Console()
 # Permanent client/context errors that will never succeed on retry. Auth/quota
 # errors are handled separately as fatal (they abort the whole model). Word
 # boundaries keep e.g. "4000 tokens" from matching the "400" status code.
-_NON_RETRYABLE_STATUS = re.compile(r"\b(?:400|404|405|406|409|410|413|415|422)\b")
+_NON_RETRYABLE_STATUS = re.compile(r"\b(?:400|402|403|404|405|406|409|410|413|415|422)\b")
 _NON_RETRYABLE_HINTS = (
     "context_length_exceeded",
     "maximum context length",
@@ -132,6 +132,8 @@ def process_question(
     gen_error: Exception | None = None
     stopped = False
     attempt = 0
+    consecutive_same_error = 0
+    last_error_msg = ""
 
     while True:
         if should_stop and should_stop():
@@ -149,6 +151,15 @@ def process_question(
             # Permanent errors (bad request, context too long, content filter)
             # will never succeed no matter how long we wait — record and move on.
             if not _is_retryable_error(e):
+                break
+
+            err_msg_str = str(e)
+            if isinstance(e, RuntimeError) and err_msg_str == last_error_msg:
+                consecutive_same_error += 1
+            else:
+                consecutive_same_error = 1
+                last_error_msg = err_msg_str
+            if consecutive_same_error >= 3:
                 break
 
             attempt += 1
@@ -258,6 +269,10 @@ def run_engine(
     if callbacks is None:
         callbacks = DefaultEngineCallbacks()
 
+    names = [m.name for m in models]
+    if len(names) != len(set(names)):
+        raise ValueError("Duplicate model names detected; each model must have a unique name")
+
     results: dict = dict(existing_results) if existing_results else {}
     settings = config.settings
 
@@ -314,21 +329,20 @@ def run_engine(
                     callbacks.on_event(model.name, f"No questions loaded for {bench_name}")
                     continue
 
-                # Benchmark Resumption Check: skip if already completed in loaded results
-                existing_b = results.get(model.name, {}).get(bench_name)
-                if isinstance(existing_b, dict) and "details" in existing_b:
-                    ex_details = existing_b.get("details", [])
-                    if len(ex_details) >= len(questions) and not any(
-                        d.get("status") == "cancelled" for d in ex_details if isinstance(d, dict)
-                    ):
-                        callbacks.on_event(
-                            model.name,
-                            f"Skipping {bench_name} (already completed in loaded results)",
-                        )
-                        callbacks.on_benchmark_done(model.name, bench_name, existing_b)
-                        continue
-
                 q_hash = compute_question_hash(questions)
+
+                existing_b = results.get(model.name, {}).get(bench_name)
+                ex_details = existing_b.get("details", []) if isinstance(existing_b, dict) else []
+                if (isinstance(existing_b, dict) and "details" in existing_b
+                    and existing_b.get("question_hash") == q_hash
+                    and len(ex_details) >= len(questions)
+                    and not any(d.get("status") == "cancelled" for d in ex_details if isinstance(d, dict))):
+                    callbacks.on_event(
+                        model.name,
+                        f"Skipping {bench_name} (already completed in loaded results)",
+                    )
+                    callbacks.on_benchmark_done(model.name, bench_name, existing_b)
+                    continue
                 callbacks.on_benchmark_start(model.name, bench_name, len(questions))
                 callbacks.on_event(
                     model.name,
@@ -361,6 +375,14 @@ def run_engine(
                 try:
                     while pending:
                         if _stopped() or fatal_encountered:
+                            for f in list(pending):
+                                if f.done():
+                                    try:
+                                        detail = f.result()
+                                        details.append(detail)
+                                    except Exception:
+                                        pass
+                                    pending.discard(f)
                             for f in pending:
                                 f.cancel()
                             break
@@ -368,8 +390,6 @@ def run_engine(
                         for future in done:
                             try:
                                 detail = future.result()
-                                details.append(detail)
-                                callbacks.on_question_done(model.name, bench_name, detail)
                             except FatalModelError as fe:
                                 callbacks.on_event(model.name, f"[CRITICAL] {fe}")
                                 fatal_encountered = True
@@ -386,7 +406,16 @@ def run_engine(
                                     "score": 0.0,
                                 }
                                 details.append(err_detail)
-                                callbacks.on_question_done(model.name, bench_name, err_detail)
+                                try:
+                                    callbacks.on_question_done(model.name, bench_name, err_detail)
+                                except Exception:
+                                    pass
+                                continue
+                            details.append(detail)
+                            try:
+                                callbacks.on_question_done(model.name, bench_name, detail)
+                            except Exception:
+                                pass
                 except Exception as loop_err:
                     callbacks.on_event(model.name, f"Execution error in benchmark pool: {loop_err}")
                 finally:
@@ -412,6 +441,8 @@ def run_engine(
                     "score": round(score, 4) if score is not None else None,
                     "correct": correct_count,
                     "total": total_count,
+                    "attempted": len(details),
+                    "total_questions": len(questions),
                     "eval_error_count": len(eval_errors),
                     "provider_error_count": len(provider_errors),
                     "truncated_count": len(truncated_items),
@@ -422,6 +453,8 @@ def run_engine(
                     "total_tokens": sum(d.get("total_tokens", 0) for d in details),
                     "details": details,
                 }
+                if fatal_encountered or _stopped() or len(details) < len(questions):
+                    b_summary["partial"] = True
 
                 tps_vals = [d["tokens_per_second"] for d in details if d.get("tokens_per_second") is not None]
                 if tps_vals:

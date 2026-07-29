@@ -36,6 +36,8 @@ def _now_utc_str() -> str:
 
 
 def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
+    if isinstance(results.get("models"), dict):
+        results = results["models"]
     bench_names = list(config.enabled_benchmarks().keys())
     cat_names = list(config.categories.keys())
     model_names = [m for m in results if isinstance(results[m], dict)]
@@ -113,6 +115,11 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
         "(https://github.com/TruftedBug89/lite-benchmarks/actions)"
     )
     _a(
+        "[![Live Site](https://img.shields.io/badge/Live_Site-lite--benchmarks.netlify.app"
+        "-f0b429?style=flat-square&logo=netlify&logoColor=white)]"
+        "(https://lite-benchmarks.netlify.app/)"
+    )
+    _a(
         "[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)]"
         "(https://opensource.org/licenses/MIT)"
     )
@@ -131,6 +138,16 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     )
     _a("")
     _a("</div>")
+    _a("")
+
+    # ── Live site ────────────────────────────────────────────────────
+    _a("## 🌐 Live Leaderboard")
+    _a("")
+    _a(
+        "**[lite-benchmarks.netlify.app](https://lite-benchmarks.netlify.app/)** — "
+        "interactive leaderboard, charts, and per-benchmark breakdowns, "
+        "auto-rebuilt from this repo on every push."
+    )
     _a("")
 
     # ── Features ─────────────────────────────────────────────────────
@@ -202,6 +219,7 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
     # ── Table of Contents ────────────────────────────────────────────
     _a("## 📑 Table of Contents")
     _a("")
+    _a("- [Live Leaderboard](#-live-leaderboard)")
     _a("- [Benchmarks](#-benchmarks)")
     _a("- [Leaderboard](#-leaderboard)")
     _a("- [Charts](#-charts)")

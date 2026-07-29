@@ -1,0 +1,23 @@
+---
+import { fmtDate, summary } from "../lib/data";
+---
+
+<footer class="border-t border-edge">
+  <div class="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-10 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+    <p class="font-mono text-[11px] leading-relaxed text-muted">
+      Auto-generated from <span class="text-fg">results/latest.json</span> · data snapshot {fmtDate(summary.generated_at)}
+      <br class="sm:hidden" />
+      <span class="hidden sm:inline"> · </span>
+      seed {summary.seed} · MIT licensed
+    </p>
+    <div class="flex items-center gap-5 font-mono text-[11px]">
+      <a href="https://github.com/TruftedBug89/lite-benchmarks" class="text-muted transition-colors hover:text-fg">
+        GitHub ↗
+      </a>
+      <span class="text-muted">
+        built with <a href="https://github.com/BerriAI/litellm" class="underline-offset-2 hover:underline">litellm</a>
+        + <a href="https://github.com/huggingface/datasets" class="underline-offset-2 hover:underline">🤗 datasets</a>
+      </span>
+    </div>
+  </div>
+</footer>

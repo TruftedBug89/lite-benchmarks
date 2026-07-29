@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import ast
 import os
+import secrets
 import shutil
 import subprocess
 import sys
@@ -48,7 +49,8 @@ _BLOCKED_MODULES = frozenset(
     {
         # OS / filesystem
         "os", "sys", "pathlib", "shutil", "glob", "fileinput", "tempfile",
-        "io", "mmap", "stat",
+        "io", "mmap", "stat", "nt", "posix", "_io", "ntpath", "posixpath",
+        "genericpath",
         # processes / shells
         "subprocess", "pty", "signal", "multiprocessing", "concurrent",
         "_winapi", "msvcrt", "fcntl", "termios", "tty",
@@ -57,11 +59,12 @@ _BLOCKED_MODULES = frozenset(
         # network
         "socket", "ssl", "select", "requests", "urllib", "http", "ftplib",
         "telnetlib", "smtplib", "imaplib", "poplib", "xmlrpc", "asyncio",
-        "websocket", "aiohttp", "httpx", "paramiko",
+        "websocket", "aiohttp", "httpx", "paramiko", "_socket", "_ssl",
         # dynamic import / code loading / introspection escapes
         "importlib", "runpy", "code", "codeop", "inspect", "traceback",
         "pdb", "bdb", "builtins", "linecache",
         "gc", "ast", "pkgutil", "zipimport", "site", "imp", "_thread",
+        "codecs", "_codecs", "_warnings", "_abc", "_imp", "_frozen_importlib",
         # (de)serialization that can execute code or touch files
         "pickle", "shelve", "marshal", "dill", "dbm", "sqlite3",
         # archives (direct file writes)
@@ -88,7 +91,7 @@ _BLOCKED_BUILTINS = frozenset(
     {
         "open", "eval", "exec", "compile", "__import__", "input",
         "getattr", "hasattr", "setattr", "delattr", "globals", "locals",
-        "vars", "breakpoint", "exit", "quit",
+        "vars", "breakpoint", "exit", "quit", "__builtins__",
     }
 )
 
@@ -99,7 +102,7 @@ _BLOCKED_ATTRS = frozenset(
         "__class__", "__base__", "__bases__", "__subclasses__", "__mro__",
         "__globals__", "__builtins__", "__builtin__", "__import__",
         "__loader__", "__spec__", "__code__", "__reduce__", "__reduce_ex__",
-        "__getattribute__", "__dict__", "__init__", "__func__", "__self__",
+        "__getattribute__", "__dict__", "__func__", "__self__",
         "gi_frame", "gi_code", "cr_frame", "cr_code", "ag_frame", "ag_code",
         "f_globals", "f_locals", "f_builtins", "f_code", "tb_frame", "mro",
     }
@@ -113,6 +116,7 @@ _BLOCKED_ATTR_CALLS = frozenset(
         "execl", "execle", "execlp", "execv", "execve", "execvp",
         "spawnl", "spawnv", "spawnlp", "spawnvp",
         "rmtree", "kill", "killpg", "terminate",
+        "attrgetter", "methodcaller", "itemgetter",
     }
 )
 
@@ -128,6 +132,16 @@ def scan_code(code: str) -> list[str]:
         return [f"syntax error: {e}"]
 
     violations: list[str] = []
+    shadowed_names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.arg):
+            shadowed_names.add(node.arg)
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            shadowed_names.add(node.id)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            shadowed_names.add(node.name)
+        elif isinstance(node, ast.ClassDef):
+            shadowed_names.add(node.name)
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -155,7 +169,11 @@ def scan_code(code: str) -> list[str]:
                 violations.append(f"call to blocked function '{func.attr}()'")
         elif isinstance(node, ast.Name):
             # Block aliasing tricks like `f = eval; f("...")`.
-            if node.id in _BLOCKED_BUILTINS and isinstance(node.ctx, ast.Load):
+            if (
+                node.id in _BLOCKED_BUILTINS
+                and isinstance(node.ctx, ast.Load)
+                and node.id not in shadowed_names
+            ):
                 violations.append(f"reference to blocked builtin '{node.id}'")
     return violations
 
@@ -192,6 +210,7 @@ def _sandbox_env(sandbox_dir: str) -> dict[str, str]:
             "HOMEPATH": os.path.splitdrive(sandbox_dir)[1] or "\\",
             # No __pycache__ writes into site-packages or the repo.
             "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONHASHSEED": "0",
             "PYTHONIOENCODING": "utf-8",
             # Headless plotting, caches inside the sandbox.
             "MPLBACKEND": "Agg",
@@ -207,7 +226,11 @@ def _sandbox_env(sandbox_dir: str) -> dict[str, str]:
 
 
 def _run_child(
-    script_path: str, sandbox_dir: str, env: dict[str, str], timeout: int
+    script_path: str,
+    sandbox_dir: str,
+    env: dict[str, str],
+    timeout: int,
+    sentinel: str,
 ) -> tuple[bool, list[str]]:
     """Spawn the sandboxed interpreter, confined by a Windows Job Object when
     available. Process isolation (own cwd/env/exit code, clean kill on timeout)
@@ -228,8 +251,9 @@ def _run_child(
         proc = subprocess.Popen(
             [sys.executable, script_path],
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
+            stderr=subprocess.DEVNULL,
+            encoding="utf-8",
+            errors="replace",
             cwd=sandbox_dir,
             env=env,
         )
@@ -241,7 +265,7 @@ def _run_child(
             if handle:
                 child_job.assign(handle)
         try:
-            proc.communicate(timeout=timeout)
+            stdout, _ = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
             proc.kill()
             try:
@@ -249,7 +273,11 @@ def _run_child(
             except Exception:
                 pass
             return False, ["execution timed out"]
-        return proc.returncode == 0, []
+        if sentinel:
+            passed = proc.returncode == 0 and sentinel in (stdout or "")
+        else:
+            passed = proc.returncode == 0
+        return passed, []
     finally:
         if child_job is not None:
             child_job.close()
@@ -282,10 +310,15 @@ def execute_sandboxed(
     if violations:
         return False, violations
 
+    if not trusted_code.strip():
+        return False, ["no trusted test harness provided"]
+
+    sentinel = secrets.token_hex(8)
     script = (
-        untrusted_code + "\n\n" + trusted_code
-        if trusted_code.strip()
-        else untrusted_code
+        untrusted_code
+        + "\n\n"
+        + trusted_code
+        + f'\n\nprint("{sentinel}", end="")'
     )
 
     sandbox_dir = tempfile.mkdtemp(prefix="litebench_sbx_")
@@ -293,7 +326,9 @@ def execute_sandboxed(
         script_path = os.path.join(sandbox_dir, "run.py")
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(script)
-        return _run_child(script_path, sandbox_dir, _sandbox_env(sandbox_dir), timeout)
+        return _run_child(
+            script_path, sandbox_dir, _sandbox_env(sandbox_dir), timeout, sentinel
+        )
     except subprocess.TimeoutExpired:
         return False, ["execution timed out"]
     except Exception as e:

@@ -241,6 +241,16 @@
     /* Status Badges */
     .status-badge.saved { background: rgba(255,255,255,0.06); color: var(--text-muted); border: 1px solid rgba(255,255,255,0.12); }
     .status-badge.live { background: rgba(6,182,212,0.2); color: #38bdf8; border: 1px solid rgba(6,182,212,0.4); box-shadow: 0 0 10px rgba(6,182,212,0.3); }
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.85);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.active { display: flex; }
     .modal-content {
       background: #0f172a; border: 1px solid var(--border-glow); border-radius: 18px;
       width: 520px; max-width: 90vw; padding: 1.5rem;
@@ -780,10 +790,12 @@
       }
     };
 
+    const startBtn = document.getElementById('start-btn');
+    startBtn.disabled = true;
     try {
       const res = await fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (res.ok) {
-        document.getElementById('start-btn').style.display = 'none';
+        startBtn.style.display = 'none';
         document.getElementById('stop-btn').style.display = 'inline-flex';
         isRunning = true;
       } else {
@@ -791,6 +803,7 @@
         alert(err.error || "Failed to start run.");
       }
     } catch (e) { alert("Failed to contact the server. Is it running?"); console.error(e); }
+    startBtn.disabled = false;
   }
 
   async function stopRun() {
@@ -825,6 +838,10 @@
     if (lastIsRunning && !status.is_running) {
       loadSavedResults();
       loadRunHistory();
+    }
+    if (!lastIsRunning && status.is_running) {
+      throughputHistory = [];
+      lastRanks.clear();
     }
     lastIsRunning = status.is_running;
     isRunning = status.is_running;
@@ -873,7 +890,7 @@
     renderLeaderboard(states);
   }
 
-  function escapeHtml(str) { return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function escapeHtml(str) { return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
   function renderModelCards(states) {
     const grid = document.getElementById('live-cards-grid');
@@ -895,7 +912,10 @@
     card.innerHTML = `
       <div class="model-card-header">
         <div><div class="model-name">${escapeHtml(name)}</div><div class="model-id">${escapeHtml(id)}</div></div>
-        <div class="status-badge">Idle</div>
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+          <div class="status-badge">Idle</div>
+          <button class="btn btn-secondary btn-sm" onclick="openInspector('${escapeHtml(name)}')">Inspect</button>
+        </div>
       </div>
       <div class="card-top-section">
         <div class="gauge-wrapper">
@@ -929,13 +949,15 @@
 
     const pct = st.q_total > 0 ? (st.q_index / st.q_total * 100) : 0;
     const accFloat = st.accuracy != null ? st.accuracy * 100 : 0;
-    const accStr = st.accuracy != null ? `${accFloat.toFixed(1)}%` : '0%';
+    const accStr = st.accuracy != null ? `${accFloat.toFixed(1)}%` : '—';
     const circumference = 201;
     card.querySelector('.gauge-fill').style.strokeDashoffset = circumference - (accFloat / 100 * circumference);
     card.querySelector('.gauge-text').innerText = accStr;
     card.querySelector('.bench-label').innerText = st.current_benchmark_display || st.current_benchmark || 'Benchmarking';
+    const statusKey = String(st.status || '').toLowerCase();
+    const isTerminal = st.is_finished || st.is_failed || statusKey === 'completed' || statusKey === 'stopped' || statusKey === 'failed';
     card.querySelector('.q-counter').innerText = `${st.q_index}/${st.q_total} (${pct.toFixed(0)}%)`;
-    card.querySelector('.progress-bar-fill').style.width = `${pct}%`;
+    card.querySelector('.progress-bar-fill').style.width = `${isTerminal ? 100 : pct}%`;
     const failedHtml = st.failed > 0
       ? ` <span style="color:var(--accent-rose)" title="Questions that failed (provider or scorer)">+${st.failed} err</span>`
       : '';

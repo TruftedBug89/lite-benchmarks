@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -24,7 +25,7 @@ from dataclasses import asdict, dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from lite_bench.charts import generate_all as generate_charts
 from lite_bench.config import Config, ModelConfig, Settings, load_config
@@ -32,6 +33,7 @@ from lite_bench.engine import DefaultEngineCallbacks, run_engine
 from lite_bench.metadata import BENCHMARK_INFO, CATEGORY_ICONS, CATEGORY_LABELS
 from lite_bench.readme_gen import write_readme
 from lite_bench.results_store import append_run_history, load_latest_results, load_run_history
+from refresh_site import refresh_site
 
 ROOT_DIR = Path(__file__).parent.resolve()
 WEB_DIR = ROOT_DIR / "web"
@@ -82,6 +84,16 @@ def _env_truthy(name: str) -> bool:
     """Robust env flag check: tolerates trailing spaces from cmd's `set X=1 `
     and common truthy spellings. Values are never logged."""
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+_SECRET_PATTERNS = re.compile(
+    r"Bearer\s+\S+|sk-\S+|api[_-]?key[=:]\s*\S+|token[=:]\s*\S+",
+    re.IGNORECASE,
+)
+
+
+def _scrub_secrets(text: str) -> str:
+    return _SECRET_PATTERNS.sub("[REDACTED]", text)
 
 
 def load_custom_models() -> list[dict]:
@@ -159,15 +171,20 @@ class LiveModelState:
 class EngineCallbacksBridge(DefaultEngineCallbacks):
     def __init__(self, engine: DashboardEngine):
         self.engine = engine
+        self._run_id = engine._run_id
 
     def on_event(self, model_name: str, message: str) -> None:
+        if self.engine._run_id != self._run_id:
+            return
         with self.engine.state_lock:
-            self.engine._log_locked(f"[{model_name}] {message}")
+            self.engine._log_locked(f"[{model_name}] {_scrub_secrets(message)}")
             state = self.engine.states.get(model_name)
             if state:
-                state.add_event(message)
+                state.add_event(_scrub_secrets(message))
 
     def on_benchmark_start(self, model_name: str, bench_name: str, total_questions: int) -> None:
+        if self.engine._run_id != self._run_id:
+            return
         with self.engine.state_lock:
             state = self.engine.states.get(model_name)
             if state:
@@ -178,6 +195,8 @@ class EngineCallbacksBridge(DefaultEngineCallbacks):
                 state.status = "Running"
 
     def on_question_retry(self, model_name: str, bench_name: str, info: dict) -> None:
+        if self.engine._run_id != self._run_id:
+            return
         with self.engine.state_lock:
             state = self.engine.states.get(model_name)
             if state:
@@ -186,19 +205,19 @@ class EngineCallbacksBridge(DefaultEngineCallbacks):
                     state.rate_limit_count += 1
                 state.retry_note = (
                     f"⏳ Q#{info.get('question_id', 0)} attempt {info.get('attempt', '?')} failed "
-                    f"({info.get('error', '')}); retrying in {info.get('backoff', 0):.0f}s"
+                    f"({_scrub_secrets(str(info.get('error', '')))}); retrying in {info.get('backoff', 0):.0f}s"
                 )
-            # Log the first few attempts, then every 5th, so a persistently
-            # failing provider stays visible without flooding the web log.
             attempt = info.get("attempt", 0)
             if attempt <= 3 or attempt % 5 == 0:
                 max_str = info.get("max_attempts") or "∞"
                 self.engine._log_locked(
                     f"[{model_name}] Q#{info.get('question_id', 0)} retry {attempt}/{max_str}: "
-                    f"{info.get('error', '')} — waiting {info.get('backoff', 0):.0f}s for a good response"
+                    f"{_scrub_secrets(str(info.get('error', '')))} — waiting {info.get('backoff', 0):.0f}s for a good response"
                 )
 
     def on_question_done(self, model_name: str, bench_name: str, detail: dict) -> None:
+        if self.engine._run_id != self._run_id:
+            return
         with self.engine.state_lock:
             state = self.engine.states.get(model_name)
             if not state:
@@ -212,15 +231,11 @@ class EngineCallbacksBridge(DefaultEngineCallbacks):
             status = detail.get("status", "error")
             score = float(detail.get("score", 0.0))
 
-            # Monotonic progress: questions finish out of order under
-            # concurrency, so count completions instead of using the id.
             state.q_index += 1
             state.retry_note = None
             if detail.get("is_truncated"):
                 state.truncated_count += 1
 
-            # Match the engine's accounting: only success/eval_error are scored;
-            # provider errors are failures, not zeros in the accuracy average.
             if status in ("success", "eval_error"):
                 state.scored += 1
                 state.correct += score
@@ -243,12 +258,10 @@ class EngineCallbacksBridge(DefaultEngineCallbacks):
                     state.avg_tps = (state.avg_tps * 0.8) + (tps * 0.2)
 
             resp = detail.get("response", "")
-            # Skip the "[Error: …]" wrapper for failed generations — the
-            # dedicated error line shows it instead of the response snippet.
             if resp and status != "error":
                 state.latest_snippet = resp[:150].replace("\n", " ")
 
-            error_msg = detail.get("error_msg", "")
+            error_msg = _scrub_secrets(detail.get("error_msg", ""))
             if status in ("error", "eval_error") and error_msg:
                 state.last_error = f"Q#{qi}: {error_msg[:4000]}"
             elif status == "success":
@@ -275,17 +288,30 @@ class EngineCallbacksBridge(DefaultEngineCallbacks):
             state.questions.append(q_entry)
 
     def on_benchmark_done(self, model_name: str, bench_name: str, summary: dict) -> None:
+        if self.engine._run_id != self._run_id:
+            return
         with self.engine.state_lock:
             state = self.engine.states.get(model_name)
             if state:
                 state.benchmark_scores[bench_name] = summary.get("score", 0.0)
 
-    def on_model_done(self, model_name: str) -> None:
+    def on_model_done(self, model_name: str, reason: str = "completed") -> None:
+        if self.engine._run_id != self._run_id:
+            return
         with self.engine.state_lock:
             state = self.engine.states.get(model_name)
             if state:
+                if state.status in ("Stopped", "Failed"):
+                    return
                 state.is_finished = True
-                state.status = "Completed"
+                if reason == "stopped":
+                    state.status = "Stopped"
+                elif reason == "fatal":
+                    state.is_failed = True
+                    state.fatal_error = "Provider fatal error"
+                    state.status = "Failed"
+                else:
+                    state.status = "Completed"
 
 
 class DashboardEngine:
@@ -468,13 +494,14 @@ class DashboardEngine:
             settings=settings,
         )
 
-        for m in models:
-            self.states[m.name] = LiveModelState(
-                id=m.id,
-                name=m.name,
-                thinking_effort=m.thinking_effort,
-                status="Queued",
-            )
+        with self.state_lock:
+            for m in models:
+                self.states[m.name] = LiveModelState(
+                    id=m.id,
+                    name=m.name,
+                    thinking_effort=m.thinking_effort,
+                    status="Queued",
+                )
 
         def _worker():
             try:
@@ -506,6 +533,14 @@ class DashboardEngine:
                                 self._log_locked(f"⚠️ Failed to save run history: {hist_err}")
             except Exception as e:
                 self.log(f"❌ Error during benchmark execution: {e}")
+                with self.state_lock:
+                    if self._run_id == run_id:
+                        for st in self.states.values():
+                            if not st.is_finished:
+                                st.status = "Failed"
+                                st.is_finished = True
+                                st.is_failed = True
+                                st.fatal_error = str(e)
             finally:
                 # Only touch shared state if no newer run has started since.
                 with self.state_lock:
@@ -638,9 +673,9 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/model-questions":
-            query = dict(qc.split("=", 1) for qc in url.query.split("&") if "=" in qc)
-            model_name = query.get("model")
-            bench_name = query.get("benchmark")
+            params = parse_qs(url.query)
+            model_name = params.get("model", [None])[0]
+            bench_name = params.get("benchmark", [None])[0]
             if not model_name:
                 self._send_json({"error": "Missing model parameter"}, status=400)
                 return
@@ -659,7 +694,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     if bench_name and bench_name in mdata:
                         questions_list = mdata[bench_name].get("details", [])
                     elif not bench_name:
-                        for bk, bv in mdata.items():
+                        for _bk, bv in mdata.items():
                             if isinstance(bv, dict) and "details" in bv:
                                 questions_list.extend(bv["details"])
                 except Exception:
@@ -800,68 +835,79 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "Invalid JSON body."}, status=400)
             return
 
-        if path == "/api/run":
-            try:
-                base_config = load_config(CONFIG_FILE)
-            except Exception as e:
-                self._send_json({"error": f"Failed to load config: {e}"}, status=500)
-                return
-            if not ENGINE.run_async(payload, base_config):
-                self._send_json({"error": "A benchmark run is already in progress."}, status=400)
-                return
-            self._send_json({"status": "started"})
+        if not isinstance(payload, dict):
+            self._send_json({"error": "Request body must be a JSON object"}, status=400)
             return
 
-        if path == "/api/stop":
-            ENGINE.stop()
-            self._send_json({"status": "stopping"})
-            return
-
-        if path == "/api/custom-models":
-            models = load_custom_models()
-            action = payload.get("action", "add")
-            if action == "add":
-                model_entry = {
-                    "id": payload.get("id", "").strip(),
-                    "name": payload.get("name", "").strip(),
-                    "thinking_effort": payload.get("thinking_effort") or None,
-                    "api_base": payload.get("api_base") or None,
-                    "api_key_env": payload.get("api_key_env") or None,
-                }
-                if not model_entry["id"]:
-                    self._send_json({"error": "Model ID is required."}, status=400)
+        try:
+            if path == "/api/run":
+                try:
+                    base_config = load_config(CONFIG_FILE)
+                except Exception as e:
+                    self._send_json({"error": f"Failed to load config: {e}"}, status=500)
                     return
-                if not model_entry["name"]:
-                    model_entry["name"] = model_entry["id"]
-                models = [m for m in models if m["id"] != model_entry["id"]]
-                models.append(model_entry)
-                save_custom_models(models)
-                self._send_json({"status": "added", "models": models})
-            elif action == "delete":
-                mid = payload.get("id", "").strip()
-                models = [m for m in models if m["id"] != mid]
-                save_custom_models(models)
-                self._send_json({"status": "deleted", "models": models})
-            else:
-                self._send_json({"error": "Unknown action."}, status=400)
-            return
-
-        if path == "/api/reports":
-            try:
-                config = load_config(CONFIG_FILE)
-                latest = load_latest_results(config, _latest_results_path(config))
-                if not latest:
-                    self._send_json({"error": "No results found to generate reports."}, status=400)
+                if not ENGINE.run_async(payload, base_config):
+                    self._send_json({"error": "A benchmark run is already in progress."}, status=400)
                     return
-                charts_dir = _abs(config.settings.charts_dir)
-                chart_paths = generate_charts(latest, config, str(charts_dir))
-                write_readme(latest, config, chart_paths, path=str(ROOT_DIR / "README.md"))
-                self._send_json({"status": "success", "chart_paths": chart_paths})
-            except Exception as e:
-                self._send_json({"error": f"Failed to generate reports: {e}"}, status=500)
-            return
+                self._send_json({"status": "started"})
+                return
 
-        self.send_error(404, "Not Found")
+            if path == "/api/stop":
+                ENGINE.stop()
+                self._send_json({"status": "stopping"})
+                return
+
+            if path == "/api/custom-models":
+                models = load_custom_models()
+                action = payload.get("action", "add")
+                if action == "add":
+                    model_entry = {
+                        "id": payload.get("id", "").strip(),
+                        "name": payload.get("name", "").strip(),
+                        "thinking_effort": payload.get("thinking_effort") or None,
+                        "api_base": payload.get("api_base") or None,
+                        "api_key_env": payload.get("api_key_env") or None,
+                    }
+                    if not model_entry["id"]:
+                        self._send_json({"error": "Model ID is required."}, status=400)
+                        return
+                    if not model_entry["name"]:
+                        model_entry["name"] = model_entry["id"]
+                    models = [m for m in models if m["id"] != model_entry["id"]]
+                    models.append(model_entry)
+                    save_custom_models(models)
+                    self._send_json({"status": "added", "models": models})
+                elif action == "delete":
+                    mid = payload.get("id", "").strip()
+                    models = [m for m in models if m["id"] != mid]
+                    save_custom_models(models)
+                    self._send_json({"status": "deleted", "models": models})
+                else:
+                    self._send_json({"error": "Unknown action."}, status=400)
+                return
+
+            if path == "/api/reports":
+                try:
+                    config = load_config(CONFIG_FILE)
+                    latest = load_latest_results(config, _latest_results_path(config))
+                    if not latest:
+                        self._send_json({"error": "No results found to generate reports."}, status=400)
+                        return
+                    charts_dir = _abs(config.settings.charts_dir)
+                    chart_paths = generate_charts(latest, config, str(charts_dir))
+                    write_readme(latest, config, chart_paths, path=str(ROOT_DIR / "README.md"))
+                    try:
+                        refresh_site(config, latest)
+                    except Exception as site_err:
+                        print(f"[warn] site snapshot refresh failed: {site_err}")
+                    self._send_json({"status": "success", "chart_paths": chart_paths})
+                except Exception as e:
+                    self._send_json({"error": f"Failed to generate reports: {e}"}, status=500)
+                return
+
+            self.send_error(404, "Not Found")
+        except Exception:
+            self._send_json({"error": "Internal server error"}, status=500)
 
 
 def main() -> None:

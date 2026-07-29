@@ -1,0 +1,103 @@
+---
+import "../styles/global.css";
+import BenchmarkCatalog from "../components/BenchmarkCatalog.astro";
+import ChartPanel from "../components/ChartPanel.astro";
+import Footer from "../components/Footer.astro";
+import LeaderboardTable from "../components/LeaderboardTable.astro";
+import Methodology from "../components/Methodology.astro";
+import NavBar from "../components/NavBar.astro";
+import Opening from "../components/Opening.astro";
+import TokenTable from "../components/TokenTable.astro";
+import { summary } from "../lib/data";
+
+const description = `Lite Benchmarks — a reproducible LLM leaderboard. ${summary.benchmarks.length} established benchmarks, ~50 questions each, scored 100% programmatically. No LLM-as-judge.`;
+---
+
+<html lang="en" class="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lite Benchmarks — LLM Leaderboard</title>
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Lite Benchmarks — LLM Leaderboard" />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content="https://lite-benchmarks.netlify.app/" />
+    <meta name="twitter:card" content="summary" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <script is:inline>
+      (() => {
+        let stored = null;
+        try {
+          stored = localStorage.getItem("lb-theme");
+        } catch (e) {}
+        document.documentElement.classList.toggle("dark", stored ? stored === "dark" : true);
+      })();
+    </script>
+  </head>
+
+  <body class="bg-base font-sans text-fg antialiased">
+    <NavBar />
+
+    <main>
+      <Opening />
+      <LeaderboardTable />
+
+      <section id="analysis" class="border-t border-edge">
+        <div class="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+          <div class="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p class="font-mono text-[11px] tracking-[0.28em] text-accent-2">UNDER THE HOOD</p>
+              <h2 class="mt-2 font-display text-2xl font-semibold tracking-tight sm:text-3xl">Analysis</h2>
+            </div>
+            <p class="font-mono text-xs text-muted">hover any chart for exact values</p>
+          </div>
+
+          <div class="mt-8 grid gap-4 lg:grid-cols-2">
+            <ChartPanel
+              id="cost"
+              title="Quality vs. Cost"
+              desc="Overall score against estimated API cost for a full run. Bubble size = output speed (tokens/sec)."
+              class="lg:col-span-2"
+              height="h-80 sm:h-96"
+            />
+            <ChartPanel
+              id="radar"
+              title="Category Radar"
+              desc="Each model's profile across the five categories. Larger area = stronger all-round."
+            />
+            <ChartPanel id="catbars" title="Category Breakdown" desc="Head-to-head grouped comparison across categories." />
+            <ChartPanel
+              id="heatmap"
+              title="Benchmark Heatmap"
+              desc="Per-benchmark scores for every model. Hover for exact counts and Wilson confidence intervals."
+              class="lg:col-span-2"
+              height="h-96 sm:h-[26rem]"
+            />
+            <ChartPanel id="tokens" title="Token Mix" desc="Input, thinking, and output tokens consumed per full run." />
+            <ChartPanel id="thinking" title="Thinking vs. Score" desc="Do more thinking tokens buy higher scores?" />
+          </div>
+        </div>
+      </section>
+
+      <BenchmarkCatalog />
+      <TokenTable />
+      <Methodology />
+    </main>
+
+    <Footer />
+
+    <script>
+      import "../lib/client";
+    </script>
+  </body>
+</html>

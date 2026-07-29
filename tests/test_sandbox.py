@@ -142,7 +142,7 @@ def test_execute_cwd_is_sandbox_dir():
 
 def test_execute_timeout_kills_runaway_code():
     untrusted = "while True:\n    pass"
-    ok, violations = execute_sandboxed(untrusted, "", timeout=2, allow_execution=True)
+    ok, violations = execute_sandboxed(untrusted, "assert True", timeout=2, allow_execution=True)
     assert not ok
     assert violations == ["execution timed out"]
 

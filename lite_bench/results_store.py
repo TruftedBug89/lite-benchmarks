@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,6 +19,8 @@ from rich.console import Console
 from .config import Config
 
 console = Console()
+
+_history_lock = threading.Lock()
 
 SCHEMA_VERSION = 2
 
@@ -102,10 +105,10 @@ def aggregate(mdata: dict, config: Config) -> None:
     summary: dict = {
         "overall_score": round(overall, 4) if overall is not None else None,
         "completed_benchmarks": len(bench_scores),
-        "total_input_tokens": sum(r.get("input_tokens", 0) for r in attempted),
-        "total_output_tokens": sum(r.get("output_tokens", 0) for r in attempted),
-        "total_thinking_tokens": sum(r.get("thinking_tokens", 0) for r in attempted),
-        "total_all_tokens": sum(r.get("total_tokens", 0) for r in attempted),
+        "total_input_tokens": sum((r.get("input_tokens") or 0) for r in attempted),
+        "total_output_tokens": sum((r.get("output_tokens") or 0) for r in attempted),
+        "total_thinking_tokens": sum((r.get("thinking_tokens") or 0) for r in attempted),
+        "total_all_tokens": sum((r.get("total_tokens") or 0) for r in attempted),
     }
 
     total_cost = sum(r.get("total_cost_usd") for r in attempted if r.get("total_cost_usd") is not None)
@@ -215,53 +218,70 @@ def append_run_history(results: dict, config: Config, results_dir: str = "result
     os.makedirs(results_dir, exist_ok=True)
     hp = _history_path(results_dir)
 
-    history: list[dict] = []
-    if hp.is_file():
-        try:
-            data = json.loads(hp.read_text(encoding="utf-8"))
-            history = data if isinstance(data, list) else data.get("runs", [])
-        except (json.JSONDecodeError, OSError):
-            history = []
-
-    enabled_names = set(config.enabled_benchmarks().keys())
-    models_snapshot: dict[str, dict] = {}
-    for mname, mdata in results.items():
-        if not isinstance(mdata, dict):
-            continue
-        bench_scores: dict[str, float] = {}
-        for k in mdata:
-            if k in enabled_names and isinstance(mdata[k], dict) and isinstance(mdata[k].get("score"), (int, float)):
-                bench_scores[k] = mdata[k]["score"]
-        summary = mdata.get("summary", {})
-        overall = summary.get("overall_score")
-        if overall is None and bench_scores:
-            overall = config.overall_score(bench_scores)
-        models_snapshot[mname] = {
-            "overall_score": round(overall, 4) if overall is not None else None,
-            "benchmarks": {k: round(v, 4) for k, v in bench_scores.items()},
-        }
-
-    if not models_snapshot:
-        return
-
-    history.append({
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "models": models_snapshot,
-    })
-
-    tmp_name = None
-    try:
-        with tempfile.NamedTemporaryFile("w", dir=hp.parent, delete=False, encoding="utf-8") as tf:
-            json.dump(history, tf, indent=2, ensure_ascii=False)
-            tmp_name = tf.name
-        os.replace(tmp_name, hp)
-        tmp_name = None
-    finally:
-        if tmp_name is not None:
+    with _history_lock:
+        history: list[dict] = []
+        if hp.is_file():
             try:
-                os.unlink(tmp_name)
+                data = json.loads(hp.read_text(encoding="utf-8"))
+                history = data if isinstance(data, list) else data.get("runs", [])
+            except json.JSONDecodeError:
+                try:
+                    os.replace(hp, hp.with_suffix(".json.corrupt"))
+                except OSError:
+                    pass
+                history = []
             except OSError:
-                pass
+                history = []
+
+        enabled_names = set(config.enabled_benchmarks().keys())
+        models_snapshot: dict[str, dict] = {}
+        for mname, mdata in results.items():
+            if not isinstance(mdata, dict):
+                continue
+            bench_scores: dict[str, float] = {}
+            for k in mdata:
+                if k in enabled_names and isinstance(mdata[k], dict) and isinstance(mdata[k].get("score"), (int, float)):
+                    bench_scores[k] = mdata[k]["score"]
+            summary = mdata.get("summary", {})
+            overall = summary.get("overall_score")
+            if overall is None and bench_scores:
+                overall = config.overall_score(bench_scores)
+            models_snapshot[mname] = {
+                "overall_score": round(overall, 4) if overall is not None else None,
+                "benchmarks": {k: round(v, 4) for k, v in bench_scores.items()},
+            }
+
+        if not models_snapshot:
+            return
+
+        history.append({
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "models": models_snapshot,
+        })
+
+        tmp_name = None
+        try:
+            with tempfile.NamedTemporaryFile("w", dir=hp.parent, delete=False, encoding="utf-8") as tf:
+                json.dump(history, tf, indent=2, ensure_ascii=False)
+                tmp_name = tf.name
+            last_err: Exception | None = None
+            for _ in range(5):
+                try:
+                    os.replace(tmp_name, hp)
+                    tmp_name = None
+                    break
+                except PermissionError as e:
+                    last_err = e
+                    time.sleep(0.1)
+            else:
+                if last_err is not None:
+                    raise last_err
+        finally:
+            if tmp_name is not None:
+                try:
+                    os.unlink(tmp_name)
+                except OSError:
+                    pass
 
 
 def load_run_history(results_dir: str = "results") -> list[dict]:

@@ -5,16 +5,21 @@
 ### Personal LLM Leaderboard & Benchmark Studio
 
 [![CI](https://img.shields.io/github/actions/workflow/status/TruftedBug89/lite-benchmarks/ci.yml?branch=main&style=flat-square&logo=github&label=CI)](https://github.com/TruftedBug89/lite-benchmarks/actions)
+[![Live Site](https://img.shields.io/badge/Live_Site-lite--benchmarks.netlify.app-f0b429?style=flat-square&logo=netlify&logoColor=white)](https://lite-benchmarks.netlify.app/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![Python](https://img.shields.io/badge/Python-%E2%89%A53.10-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org)
 ![Benchmarks](https://img.shields.io/badge/Benchmarks-12-green?style=flat-square)
 ![Categories](https://img.shields.io/badge/Categories-5-purple?style=flat-square)
-![Models](https://img.shields.io/badge/Models_tested-3-orange?style=flat-square)
+![Models](https://img.shields.io/badge/Models_tested-5-orange?style=flat-square)
 ![Version](https://img.shields.io/badge/version-0.2.0-red?style=flat-square)
 
 *Small, repeatable samples of established benchmarks with **100% programmatic scoring**. No LLM-as-judge. Deterministic sampling. Sandboxed code execution.*
 
 </div>
+
+## 🌐 Live Leaderboard
+
+**[lite-benchmarks.netlify.app](https://lite-benchmarks.netlify.app/)** — interactive leaderboard, charts, and per-benchmark breakdowns, auto-rebuilt from this repo on every push.
 
 ## ✨ Why Lite Benchmarks?
 
@@ -80,6 +85,7 @@ Then select models, pick benchmarks, hit **Run Benchmarks**, and **Generate Repo
 
 ## 📑 Table of Contents
 
+- [Live Leaderboard](#-live-leaderboard)
 - [Benchmarks](#-benchmarks)
 - [Leaderboard](#-leaderboard)
 - [Charts](#-charts)
@@ -113,9 +119,11 @@ Then select models, pick benchmarks, hit **Run Benchmarks**, and **Generate Repo
 
 | Rank | Model | Overall | 💻 Coding | 🔬 Science | 📐 Math | 📚 Knowledge | 📋 Instruction |
 |:----:|-------|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|
-| 🥇 | **environment** | N/A | N/A | N/A | N/A | N/A | N/A |
-| 🥈 | **settings** | N/A | N/A | N/A | N/A | N/A | N/A |
-| 🥉 | **models** | N/A | N/A | N/A | N/A | N/A | N/A |
+| 🥇 | **Deepseek v4 Pro Max** 🧠 | **50.1%** | 31.5% | 53.0% | 60.0% | 59.0% | 47.0% |
+| 🥈 | **Deepseek v4 Flash Max** 🧠 | **47.8%** | 30.0% | 52.0% | 55.0% | 53.0% | 49.0% |
+| 🥉 | **Deepseek v4 Flash** 🧠 | **46.1%** | 28.5% | 46.0% | 55.0% | 55.0% | 46.0% |
+| 4 | **Gemma 4 31B** 🧠 | **20.7%** | 0.0% | 42.0% | 20.0% | N/A | N/A |
+| 5 | **Gemma 4 26B a4b** 🧠 | N/A | N/A | N/A | N/A | N/A | N/A |
 
 *🧠 indicates reasoning models that utilize thinking tokens or have explicit thinking effort configured.*
 
@@ -123,25 +131,15 @@ Then select models, pick benchmarks, hit **Run Benchmarks**, and **Generate Repo
 
 | Model | BigCodeBench-Hard | HumanEval+ | MBPP+ | GPQA Diamond | SciBench | AIME 2024/2025 | MATH-500 | MMLU-Pro | IFEval | SciCode | SuperGPQA | Tau-Bench (Retail) |
 |-------|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|
-| environment | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
-| settings | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
-| models | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
+| Deepseek v4 Pro Max | 22% (11.0/50) ±11.2pp | 98% (49.0/50) ±5.1pp | 6% (3.0/50) ±7.1pp | 60% (30.0/50) ±13.1pp | 46% (23.0/50) ±13.3pp | 36% (18.0/50) ±12.9pp | 84% (42.0/50) ±10.1pp | 78% (39.0/50) ±11.2pp | 84% (42.0/50) ±10.1pp | 0% (0.0/50) ±3.6pp | 40% (20.0/50) ±13.1pp | 10% (5.0/50) ±8.5pp |
+| Deepseek v4 Flash Max | 22% (11.0/50) ±11.2pp | 88% (44.0/50) ±9.1pp | 10% (5.0/50) ±8.5pp | 56% (28.0/50) ±13.3pp | 48% (24.0/50) ±13.3pp | 28% (14.0/50) ±12.1pp | 82% (41.0/50) ±10.5pp | 78% (39.0/50) ±11.2pp | 86% (43.0/50) ±9.6pp | 0% (0.0/50) ±3.6pp | 28% (14.0/50) ±12.1pp | 12% (6.0/50) ±9.1pp |
+| Deepseek v4 Flash | 16% (8.0/50) ±10.1pp | 88% (44.0/50) ±9.1pp | 10% (5.0/50) ±8.5pp | 52% (26.0/50) ±13.3pp | 40% (20.0/50) ±13.1pp | 26% (13.0/50) ±11.8pp | 84% (42.0/50) ±10.1pp | 78% (39.0/50) ±11.2pp | 84% (42.0/50) ±10.1pp | 0% (0.0/50) ±3.6pp | 32% (16.0/50) ±12.5pp | 8% (4.0/50) ±7.8pp |
+| Gemma 4 31B | 0% (0.0/47) ±3.8pp | N/A | N/A | 62% (29.0/47) ±13.4pp | 22% (10.0/45) ±11.9pp | 20% (1.0/5) ±29.4pp | N/A | N/A | N/A | N/A | N/A | N/A |
+| Gemma 4 26B a4b | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
 
 *±pp indicates 95% Wilson score confidence interval half-width.*
 
 ## 📊 Charts
-
-### Category Breakdown
-
-*Grouped bar chart comparing each model across the 5 categories.*
-
-![Category Breakdown](charts/categories.png)
-
-### Benchmark Heatmap
-
-*Per-benchmark scores for every model. Green = high, red = low.*
-
-![Benchmark Heatmap](charts/heatmap.png)
 
 ### Overall Scores
 
@@ -149,17 +147,23 @@ Then select models, pick benchmarks, hit **Run Benchmarks**, and **Generate Repo
 
 ![Overall Scores](charts/leaderboard.png)
 
+### Category Breakdown
+
+*Grouped bar chart comparing each model across the 5 categories.*
+
+![Category Breakdown](charts/categories.png)
+
 ### Category Radar
 
 *Spider chart showing each model's profile across categories. Larger area = stronger overall.*
 
 ![Category Radar](charts/radar.png)
 
-### Thinking Effort vs Performance
+### Benchmark Heatmap
 
-*Scatter plot showing if models that use more thinking tokens achieve higher overall scores.*
+*Per-benchmark scores for every model. Green = high, red = low.*
 
-![Thinking Effort vs Performance](charts/thinking_scatter.png)
+![Benchmark Heatmap](charts/heatmap.png)
 
 ### Token Breakdown
 
@@ -167,13 +171,21 @@ Then select models, pick benchmarks, hit **Run Benchmarks**, and **Generate Repo
 
 ![Token Breakdown](charts/tokens.png)
 
+### Thinking Effort vs Performance
+
+*Scatter plot showing if models that use more thinking tokens achieve higher overall scores.*
+
+![Thinking Effort vs Performance](charts/thinking_scatter.png)
+
 ## 🪙 Token Usage & Performance
 
 | Model | Input | Output | Thinking | Total | Out % | Think % | Avg TPS | Avg Time | Est. Cost |
 |-------|------:|-------:|---------:|------:|------:|--------:|--------:|---------:|----------:|
-| environment | 0 | 0 | 0 | 0 | — | — | — | — | — |
-| settings | 0 | 0 | 0 | 0 | — | — | — | — | — |
-| models | 0 | 0 | 0 | 0 | — | — | — | — | — |
+| Deepseek v4 Pro Max | 273,638 | 85,211 | 970,381 | 1,329,230 | 6% | 73% | 49.9 | 38.3s | $1.0374 |
+| Deepseek v4 Flash Max | 273,638 | 71,636 | 1,012,225 | 1,357,499 | 5% | 75% | 93.0 | 21.1s | $0.3410 |
+| Deepseek v4 Flash | 273,638 | 79,896 | 995,022 | 1,348,556 | 6% | 74% | 92.9 | 21.1s | $0.3344 |
+| Gemma 4 31B | 30,457 | 25,685 | 0 | 511,427 | 5% | — | 7.4 | 98.9s | — |
+| Gemma 4 26B a4b | 0 | 0 | 0 | 0 | — | — | — | — | — |
 
 *TPS = output tokens/second (cloud APIs only, skipped for local models). Est. Cost calculated via LiteLLM cost tables.*
 
@@ -321,7 +333,7 @@ models:
 
 <div align="center">
 
-*Auto-generated by [lite-benchmarks](.) on 2026-07-28 20:57 UTC · Licensed under [MIT](LICENSE) · Built with [litellm](https://github.com/BerriAI/litellm) + [HuggingFace Datasets](https://github.com/huggingface/datasets)*
+*Auto-generated by [lite-benchmarks](.) on 2026-07-28 21:24 UTC · Licensed under [MIT](LICENSE) · Built with [litellm](https://github.com/BerriAI/litellm) + [HuggingFace Datasets](https://github.com/huggingface/datasets)*
 
 **⭐ Star this repo if you find it useful!**
 

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-from lite_bench.benchmarks import _clean_latex, _extract_boxed, _extract_letter, _extract_number
+from lite_bench.benchmarks import _clean_latex, _extract_boxed, _extract_letter
 from lite_bench.providers import GenerationResult
 
 

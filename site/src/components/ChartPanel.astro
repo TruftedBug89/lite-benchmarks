@@ -1,0 +1,17 @@
+---
+interface Props {
+  id: string;
+  title: string;
+  desc?: string;
+  height?: string;
+  class?: string;
+}
+
+const { id, title, desc, height = "h-80", class: cls = "" } = Astro.props;
+---
+
+<div class={`reveal rounded-xl border border-edge bg-panel p-5 ${cls}`}>
+  <h3 class="font-display text-[15px] font-semibold tracking-tight">{title}</h3>
+  {desc && <p class="mt-1 text-xs leading-relaxed text-muted">{desc}</p>}
+  <div class={`lb-chart mt-4 ${height}`} data-chart={id} role="img" aria-label={title}></div>
+</div>
