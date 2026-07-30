@@ -1,30 +1,39 @@
 """Sandboxed execution of model-generated code.
 
-Three layers of defense, designed to not interfere with legitimate benchmark
-solutions (which are pure computation and need no OS/file/network access):
+Four layers of defense, designed to not interfere with legitimate benchmark
+solutions while still confining them:
 
 1. AST static scan of the *untrusted* (model-generated) portion. Dangerous
    imports, builtin calls, dunder-escape attribute access, and dunder-string
    attribute lookups are rejected before anything runs. The dataset-provided
    test harness is trusted and unscanned. THIS is the layer that stops the
    object-graph crawl (().__class__.__subclasses__()) which would otherwise
-   reach the Windows sandbox's own Win32 handles (Layer 3).
+   reach the Windows sandbox's own Win32 handles (Layer 4).
 2. Hardened subprocess. The child gets a minimal allow-listed environment
    (no API keys, tokens, or credentials), a fresh temporary working directory
    that is deleted afterwards, bytecode writes disabled, and a wall-clock
    timeout. The opt-in gate (allow_execution) is enforced here so direct
    callers can never bypass it.
-3. Windows Job Object confinement (windows_sandbox.py). On Windows the spawned
+3. Runtime confinement shim (sandbox_child.py), prepended to the child script
+   as trusted code. It wraps open/io/os.open/sqlite3.connect so file I/O may
+   only touch the sandbox directory (reads also allow the Python install so
+   imports work), and wraps socket so connections may only target loopback.
+   This is what lets practical benchmarks (BigCodeBench file-I/O and network
+   tasks) run at all: those modules are NOT AST-blocked, but the shim stops
+   them reaching the host filesystem or the internet. Non-loopback connects
+   fail fast (OSError) so port scanners report "closed" instead of hanging.
+4. Windows Job Object confinement (windows_sandbox.py). On Windows the spawned
    child is assigned to a fresh Job Object whose ActiveProcessLimit blocks
    grandchildren and whose UI restrictions block clipboard/desktop access - an
-   OS-level backstop in case a model slips something past the AST scan. On
-   other platforms only Layers 1+2 apply.
+   OS-level backstop in case a model slips something past the earlier layers.
+   On other platforms only Layers 1-3 apply.
 
 This is not a perfect security boundary against a determined adversary
 writing handcrafted exploit code, but it reliably prevents the realistic
 failure mode: an uncensored model emitting destructive commands
 (rm -rf style deletion, file writes outside the sandbox, environment
-exfiltration, subprocess spawning, network calls) as part of a "solution".
+exfiltration, subprocess spawning, outbound network calls) as part of a
+"solution".
 """
 
 from __future__ import annotations
@@ -37,6 +46,15 @@ import subprocess
 import sys
 import tempfile
 
+# Source of the in-child confinement shim, prepended to every sandboxed script.
+# Loaded once at import time so the child never has to read it from disk. The
+# shim defines install() at module scope; we call it immediately, then delete
+# the name so untrusted code cannot re-invoke or introspect it.
+_SHIM_PATH = os.path.join(os.path.dirname(__file__), "sandbox_child.py")
+with open(_SHIM_PATH, encoding="utf-8") as _f:
+    _SHIM_SOURCE = _f.read()
+_SHIM_PREAMBLE = _SHIM_SOURCE + "\ninstall()\ndel install\n"
+
 # ---------------------------------------------------------------------------
 # Layer 1: AST static scan
 # ---------------------------------------------------------------------------
@@ -45,51 +63,70 @@ import tempfile
 # dynamic imports, or object-graph/frame escape hatches. operator/types/copy
 # are intentionally NOT blocked (common in scientific code) - the dunder crawl
 # they'd enable is stopped at the attribute layer (_BLOCKED_ATTRS) below instead.
+#
+# NOTE on the "confined at runtime" modules: several file/network modules that
+# practical benchmarks (BigCodeBench) legitimately require are NOT blocked here
+# because the in-child confinement shim (sandbox_child.py) restricts what they
+# can actually DO: open/io/tempfile/pathlib/glob/archives may only touch the
+# sandbox directory, and socket/ssl/requests/urllib/http may only reach
+# loopback. Blocking them outright made ~23% of BigCodeBench-Hard unpassable
+# (every file-I/O and network task). The genuinely dangerous modules below stay
+# blocked because no runtime confinement can make them safe.
 _BLOCKED_MODULES = frozenset(
     {
-        # OS / filesystem
-        "os", "sys", "pathlib", "shutil", "glob", "fileinput", "tempfile",
-        "io", "mmap", "stat", "nt", "posix", "_io", "ntpath", "posixpath",
-        "genericpath",
-        # processes / shells
+        # Raw OS filesystem access modules that are NOT runtime-confined. NOTE:
+        # `os` and `shutil` are deliberately NOT here — BigCodeBench forces them
+        # in ~56 task preambles, so the confinement shim (sandbox_child.py)
+        # allows the import but blocks process-spawning and confines every
+        # filesystem call to the sandbox dir. The path helpers (ntpath,
+        # posixpath, genericpath, stat) and codecs are pure string/encoding
+        # utilities with no side channels, so they are allowed too.
+        "sys", "fileinput", "mmap", "nt", "posix", "_io",
+        # processes / shells (genuinely unconfineable: their whole purpose is
+        # spawning processes; the Job Object is the only backstop, so they stay
+        # blocked at the AST layer for cross-platform safety)
         "subprocess", "pty", "signal", "multiprocessing", "concurrent",
         "_winapi", "msvcrt", "fcntl", "termios", "tty",
         # raw memory / FFI (full interpreter escape)
         "ctypes", "_ctypes", "cffi", "_cffi_backend",
-        # network
-        "socket", "ssl", "select", "requests", "urllib", "http", "ftplib",
-        "telnetlib", "smtplib", "imaplib", "poplib", "xmlrpc", "asyncio",
-        "websocket", "aiohttp", "httpx", "paramiko", "_socket", "_ssl",
+        # network clients that bypass the loopback shim or speak raw protocols.
+        # socket/ssl/select/smtplib/requests/urllib/http are allowed (confined
+        # to loopback at runtime); these lower-level/async ones stay blocked.
+        "ftplib", "telnetlib", "imaplib", "poplib", "xmlrpc", "asyncio",
+        "websocket", "aiohttp", "httpx", "paramiko",
         # dynamic import / code loading / introspection escapes
         "importlib", "runpy", "code", "codeop", "inspect", "traceback",
         "pdb", "bdb", "builtins", "linecache",
         "gc", "ast", "pkgutil", "zipimport", "site", "imp", "_thread",
-        "codecs", "_codecs", "_warnings", "_abc", "_imp", "_frozen_importlib",
-        # (de)serialization that can execute code or touch files
-        "pickle", "shelve", "marshal", "dill", "dbm", "sqlite3",
-        # archives (direct file writes)
-        "zipfile", "tarfile", "gzip", "bz2", "lzma",
+        "_codecs", "_warnings", "_abc", "_imp", "_frozen_importlib",
+        # (de)serialization that can execute code on load
+        "pickle", "shelve", "marshal", "dill", "dbm",
         # environment / system info / side effects
-        "platform", "psutil", "getpass", "webbrowser", "dotenv",
+        "platform", "psutil", "webbrowser", "dotenv",
         "winreg", "win32api", "win32com", "wmi", "pyautogui", "keyboard",
         "pynput", "pyperclip",
         # GUI
         "tkinter", "turtle",
-        # the harness itself + the Windows sandbox module: importing either
-        # hands untrusted code live Win32 handles / the scan rules -> self-escape.
-        "lite_bench", "windows_sandbox",
+        # the harness itself + the sandbox modules: importing either hands
+        # untrusted code live Win32 handles / the confinement shim / the scan
+        # rules -> self-escape.
+        "lite_bench", "sandbox_child", "windows_sandbox",
     }
 )
 
 # Builtins that must never be called or referenced by untrusted code:
-# file handles, dynamic execution, and attribute/global-namespace tricks
-# used to bypass the import blocklist. Note getattr/hasattr/setattr/delattr/
-# vars are blocked OUTRIGHT - any call is rejected - which also closes the
-# name-based dunder escape (getattr(o, "__subclasses__")) at the root, since
-# the attribute is never resolved through them in the first place.
+# dynamic execution and attribute/global-namespace tricks used to bypass the
+# import blocklist. Note getattr/hasattr/setattr/delattr/vars are blocked
+# OUTRIGHT - any call is rejected - which also closes the name-based dunder
+# escape (getattr(o, "__subclasses__")) at the root, since the attribute is
+# never resolved through them in the first place.
+#
+# `open` is deliberately NOT here: practical benchmarks need file I/O, and the
+# in-child confinement shim (sandbox_child.py) restricts open() to the sandbox
+# directory at runtime, so it is safe to reference while remaining confined.
 _BLOCKED_BUILTINS = frozenset(
     {
-        "open", "eval", "exec", "compile", "__import__", "input",
+        "eval", "exec", "compile", "__import__", "input",
         "getattr", "hasattr", "setattr", "delattr", "globals", "locals",
         "vars", "breakpoint", "exit", "quit", "__builtins__",
     }
@@ -220,6 +257,9 @@ def _sandbox_env(sandbox_dir: str) -> dict[str, str]:
             # Belt-and-suspenders: no Hub network access from child.
             "HF_HUB_OFFLINE": "1",
             "TRANSFORMERS_OFFLINE": "1",
+            # Confinement shim (sandbox_child.py) reads this to know the only
+            # directory untrusted file I/O may write to.
+            "LITEBENCH_SANDBOX_ROOT": sandbox_dir,
         }
     )
     return env
@@ -314,8 +354,12 @@ def execute_sandboxed(
         return False, ["no trusted test harness provided"]
 
     sentinel = secrets.token_hex(8)
+    # The confinement shim runs first (trusted, unscanned), then the untrusted
+    # model code, then the trusted test harness, then the success sentinel.
     script = (
-        untrusted_code
+        _SHIM_PREAMBLE
+        + "\n"
+        + untrusted_code
         + "\n\n"
         + trusted_code
         + f'\n\nprint("{sentinel}", end="")'

@@ -3,10 +3,11 @@ import { fmtDate, summary } from "../lib/data";
 const runDate = fmtDate(summary.run_timestamp);
 ---
 
-<header class="sticky top-0 z-50 border-b border-edge bg-[color-mix(in_srgb,var(--base)_82%,transparent)] backdrop-blur-md">
+<header class="sticky top-0 z-50 border-b border-edge bg-[color-mix(in_srgb,var(--base)_85%,transparent)] backdrop-blur-md">
+  <div class="h-[2px] w-full bg-gradient-to-r from-accent via-accent-2 to-accent opacity-80"></div>
   <nav class="mx-auto flex h-14 max-w-6xl items-center gap-6 px-4 sm:px-6">
-    <a href="#top" class="flex shrink-0 items-center gap-2.5">
-      <span class="grid size-7 place-items-center rounded-md bg-accent">
+    <a href="#top" class="flex shrink-0 items-center gap-2.5 group">
+      <span class="grid size-7 place-items-center rounded-md bg-accent shadow-sm transition-transform group-hover:scale-105">
         <svg viewBox="0 0 24 24" class="size-4 text-[#0e131f]" fill="currentColor" aria-hidden="true">
           <rect x="4" y="12" width="4" height="8" rx="1.2"></rect>
           <rect x="10" y="7" width="4" height="13" rx="1.2"></rect>
@@ -18,11 +19,11 @@ const runDate = fmtDate(summary.run_timestamp);
 
     <div class="ml-auto flex items-center gap-2 sm:gap-3">
       <div class="mr-2 hidden items-center gap-5 text-[13px] text-muted lg:flex">
-        <a href="#leaderboard" class="transition-colors hover:text-fg">Leaderboard</a>
-        <a href="#analysis" class="transition-colors hover:text-fg">Analysis</a>
-        <a href="#benchmark-catalog" class="transition-colors hover:text-fg">Benchmarks</a>
-        <a href="#token-usage" class="transition-colors hover:text-fg">Tokens</a>
-        <a href="#methodology" class="transition-colors hover:text-fg">Methodology</a>
+        <a href="#leaderboard" class="nav-link transition-colors hover:text-fg">Leaderboard</a>
+        <a href="#analysis" class="nav-link transition-colors hover:text-fg">Analysis</a>
+        <a href="#benchmark-catalog" class="nav-link transition-colors hover:text-fg">Benchmarks</a>
+        <a href="#token-usage" class="nav-link transition-colors hover:text-fg">Tokens</a>
+        <a href="#methodology" class="nav-link transition-colors hover:text-fg">Methodology</a>
       </div>
 
       <span class="hidden font-mono text-[11px] text-muted md:inline" title="Last benchmark run">
@@ -47,12 +48,39 @@ const runDate = fmtDate(summary.run_timestamp);
       <a
         href="https://github.com/TruftedBug89/lite-benchmarks"
         aria-label="GitHub repository"
+        target="_blank"
+        rel="noopener"
         class="grid size-8 place-items-center rounded-md border border-edge text-muted transition-colors hover:border-edge-strong hover:text-fg"
       >
         <svg viewBox="0 0 24 24" class="size-4" fill="currentColor" aria-hidden="true">
           <path d="M12 .5A11.5 11.5 0 0 0 .5 12.3c0 5.2 3.3 9.6 7.9 11.2.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.6-3.9-1.6-.5-1.4-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-6a4.6 4.6 0 0 1 1.2-3.1 4.3 4.3 0 0 1 .1-3.1s1-.3 3.2 1.2a10.8 10.8 0 0 1 5.8 0C17.3 5 18.3 5.3 18.3 5.3a4.3 4.3 0 0 1 .1 3.1 4.6 4.6 0 0 1 1.2 3.1c0 4.7-2.7 5.7-5.3 6 .4.4.8 1.1.8 2.2v3.2c0 .3.2.7.8.6a11.6 11.6 0 0 0 7.9-11.2A11.5 11.5 0 0 0 12 .5Z"></path>
         </svg>
       </a>
+
+      <button
+        id="mobile-menu-toggle"
+        type="button"
+        aria-label="Toggle mobile menu"
+        class="grid size-8 place-items-center rounded-md border border-edge text-muted transition-colors hover:border-edge-strong hover:text-fg lg:hidden"
+      >
+        <svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="4" y1="6" x2="20" y2="6"></line>
+          <line x1="4" y1="12" x2="20" y2="12"></line>
+          <line x1="4" y1="18" x2="20" y2="18"></line>
+        </svg>
+      </button>
     </div>
   </nav>
+
+  <!-- Mobile Dropdown Menu -->
+  <div id="mobile-menu" class="hidden border-b border-edge bg-panel px-6 py-4 shadow-lg lg:hidden">
+    <div class="flex flex-col gap-3 font-mono text-xs">
+      <a href="#leaderboard" class="mobile-nav-link text-muted transition-colors hover:text-fg py-1">Leaderboard</a>
+      <a href="#analysis" class="mobile-nav-link text-muted transition-colors hover:text-fg py-1">Analysis</a>
+      <a href="#benchmark-catalog" class="mobile-nav-link text-muted transition-colors hover:text-fg py-1">Benchmarks</a>
+      <a href="#token-usage" class="mobile-nav-link text-muted transition-colors hover:text-fg py-1">Tokens</a>
+      <a href="#methodology" class="mobile-nav-link text-muted transition-colors hover:text-fg py-1">Methodology</a>
+    </div>
+  </div>
 </header>
+

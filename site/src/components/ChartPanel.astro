@@ -10,8 +10,27 @@ interface Props {
 const { id, title, desc, height = "h-80", class: cls = "" } = Astro.props;
 ---
 
-<div class={`reveal rounded-xl border border-edge bg-panel p-5 ${cls}`}>
-  <h3 class="font-display text-[15px] font-semibold tracking-tight">{title}</h3>
-  {desc && <p class="mt-1 text-xs leading-relaxed text-muted">{desc}</p>}
+<div class={`reveal group relative overflow-hidden rounded-xl border border-edge bg-panel p-5 transition-all hover:border-edge-strong shadow-xs ${cls}`}>
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h3 class="font-display text-[15px] font-semibold tracking-tight">{title}</h3>
+      {desc && <p class="mt-1 text-xs leading-relaxed text-muted">{desc}</p>}
+    </div>
+    <button
+      type="button"
+      data-expand-chart={id}
+      aria-label={`Expand ${title} chart`}
+      title="View chart full screen"
+      class="grid size-7 shrink-0 place-items-center rounded-md border border-edge text-muted opacity-60 transition-all hover:border-edge-strong hover:opacity-100 hover:text-fg group-hover:opacity-100"
+    >
+      <svg viewBox="0 0 24 24" class="size-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 3 21 3 21 9"></polyline>
+        <polyline points="9 21 3 21 3 15"></polyline>
+        <line x1="21" y1="3" x2="14" y2="10"></line>
+        <line x1="3" y1="21" x2="10" y2="14"></line>
+      </svg>
+    </button>
+  </div>
   <div class={`lb-chart mt-4 ${height}`} data-chart={id} role="img" aria-label={title}></div>
 </div>
+

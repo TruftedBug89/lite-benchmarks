@@ -14,26 +14,26 @@ const segWidth = (part: number, total: number) => (total > 0 ? `${((part / total
         <h2 class="mt-2 font-display text-2xl font-semibold tracking-tight sm:text-3xl">Tokens & Performance</h2>
       </div>
       <div class="flex items-center gap-4 font-mono text-[11px] text-muted">
-        <span class="flex items-center gap-1.5"><span class="size-2 rounded-full" style="background:#60a5fa"></span>Input</span>
-        <span class="flex items-center gap-1.5"><span class="size-2 rounded-full" style="background:#a78bfa"></span>Thinking</span>
-        <span class="flex items-center gap-1.5"><span class="size-2 rounded-full" style="background:#2dd4bf"></span>Output</span>
+        <span class="flex items-center gap-1.5"><span class="size-2 rounded-full shadow-xs" style="background:#60a5fa"></span>Input</span>
+        <span class="flex items-center gap-1.5"><span class="size-2 rounded-full shadow-xs" style="background:#a78bfa"></span>Thinking</span>
+        <span class="flex items-center gap-1.5"><span class="size-2 rounded-full shadow-xs" style="background:#2dd4bf"></span>Output</span>
       </div>
     </div>
 
-    <div class="reveal mt-8 overflow-hidden rounded-xl border border-edge bg-panel">
+    <div class="reveal mt-8 overflow-hidden rounded-xl border border-edge bg-panel shadow-sm">
       <div class="overflow-x-auto">
         <table class="w-full min-w-[880px] border-collapse text-left text-sm">
           <thead>
-            <tr class="border-b border-edge text-[11px] uppercase tracking-wider text-muted">
+            <tr class="border-b border-edge text-[11px] uppercase tracking-wider text-muted bg-panel-2/40">
               <th class="px-4 py-3.5 font-medium">Model</th>
               <th class="px-4 py-3.5 text-right font-medium">Input</th>
               <th class="px-4 py-3.5 text-right font-medium">Output</th>
               <th class="px-4 py-3.5 text-right font-medium">Thinking</th>
               <th class="px-4 py-3.5 text-right font-medium">Total</th>
               <th class="px-4 py-3.5 font-medium">Mix</th>
-              <th class="px-4 py-3.5 text-right font-medium">TPS</th>
+              <th class="px-4 py-3.5 text-right font-medium" title="Tokens Per Second (output speed)">TPS ⓘ</th>
               <th class="px-4 py-3.5 text-right font-medium">Avg time</th>
-              <th class="px-4 py-3.5 text-right font-medium">Est. cost</th>
+              <th class="px-4 py-3.5 text-right font-medium" title="Estimated API cost per full benchmark run based on LiteLLM pricing">Est. cost ⓘ</th>
             </tr>
           </thead>
           <tbody>
@@ -51,17 +51,17 @@ const segWidth = (part: number, total: number) => (total > 0 ? `${((part / total
                 <td class="px-4 py-3.5 text-right font-mono text-[13px] font-semibold tabular-nums">{fmtInt(m.tokens.total)}</td>
                 <td class="px-4 py-3.5">
                   <span
-                    class="flex h-2 w-28 overflow-hidden rounded-full bg-panel-2"
-                    title={`in ${fmtInt(m.tokens.input)} · think ${fmtInt(m.tokens.thinking)} · out ${fmtInt(m.tokens.output)}`}
+                    class="flex h-2.5 w-28 overflow-hidden rounded-full bg-panel-2 shadow-inner transition-transform hover:scale-105"
+                    title={`Input: ${fmtInt(m.tokens.input)} · Thinking: ${fmtInt(m.tokens.thinking)} · Output: ${fmtInt(m.tokens.output)}`}
                   >
                     <span style={`width:${segWidth(m.tokens.input, m.tokens.total)};background:#60a5fa`}></span>
                     <span style={`width:${segWidth(m.tokens.thinking, m.tokens.total)};background:#a78bfa`}></span>
                     <span style={`width:${segWidth(m.tokens.output, m.tokens.total)};background:#2dd4bf`}></span>
                   </span>
                 </td>
-                <td class="px-4 py-3.5 text-right font-mono text-[13px] tabular-nums">{fmtTps(m.avg_tps)}</td>
+                <td class="px-4 py-3.5 text-right font-mono text-[13px] font-medium tabular-nums text-accent-2">{fmtTps(m.avg_tps)}</td>
                 <td class="px-4 py-3.5 text-right font-mono text-[13px] tabular-nums text-muted">{fmtMs(m.avg_time_ms)}</td>
-                <td class="px-4 py-3.5 text-right font-mono text-[13px] tabular-nums">{fmtCost(m.cost_usd)}</td>
+                <td class="px-4 py-3.5 text-right font-mono text-[13px] font-medium tabular-nums">{fmtCost(m.cost_usd)}</td>
               </tr>
             ))}
           </tbody>
@@ -73,3 +73,4 @@ const segWidth = (part: number, total: number) => (total > 0 ? `${((part / total
     </p>
   </div>
 </section>
+

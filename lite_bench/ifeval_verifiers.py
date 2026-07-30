@@ -116,9 +116,11 @@ def verify_constrained_response(response: str, **kwargs: Any) -> bool:
     options = kwargs.get(
         "options", ("My answer is yes.", "My answer is no.", "My answer is maybe.")
     )
-    return isinstance(options, Sequence) and any(
-        isinstance(option, str) and option in response.strip() for option in options
-    )
+    if isinstance(options, str):
+        options = [options]
+    elif not isinstance(options, Sequence):
+        return False
+    return any(isinstance(option, str) and option in response.strip() for option in options)
 
 
 def verify_number_highlighted_sections(response: str, **kwargs: Any) -> bool:
@@ -161,7 +163,11 @@ def verify_title(response: str, **kwargs: Any) -> bool:
 
 def verify_keywords_existence(response: str, **kwargs: Any) -> bool:
     keywords = kwargs.get("keywords")
-    return isinstance(keywords, Sequence) and all(
+    if isinstance(keywords, str):
+        keywords = [keywords]
+    elif not isinstance(keywords, Sequence):
+        return False
+    return all(
         isinstance(keyword, str) and re.search(re.escape(keyword), response, flags=re.IGNORECASE)
         for keyword in keywords
     )
@@ -177,7 +183,9 @@ def verify_keyword_frequency(response: str, **kwargs: Any) -> bool:
 
 def verify_forbidden_words(response: str, **kwargs: Any) -> bool:
     forbidden_words = kwargs.get("forbidden_words")
-    if not isinstance(forbidden_words, Sequence):
+    if isinstance(forbidden_words, str):
+        forbidden_words = [forbidden_words]
+    elif not isinstance(forbidden_words, Sequence):
         return False
     for word in forbidden_words:
         if isinstance(word, str) and word.strip():

@@ -20,12 +20,13 @@ const stats = [
   <div class="absolute -top-10 right-[8%] h-80 w-80 rounded-full bg-[var(--glow-2)] blur-[120px]" aria-hidden="true"></div>
 
   <div class="relative mx-auto max-w-6xl px-4 pb-14 pt-16 sm:px-6 sm:pb-16 sm:pt-24">
-    <p class="font-mono text-[11px] tracking-[0.28em] text-accent sm:text-xs">
+    <div class="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 font-mono text-[11px] tracking-[0.2em] text-accent">
+      <span class="size-1.5 rounded-full bg-accent animate-pulse"></span>
       PROGRAMMATIC LLM EVALUATION · NO LLM-AS-JUDGE
-    </p>
+    </div>
 
     <h1 class="mt-5 max-w-3xl font-display text-4xl font-bold leading-[1.04] tracking-tight sm:text-6xl">
-      The leaderboard built on <span class="text-accent">verifiable</span> scores.
+      The leaderboard built on <span class="bg-gradient-to-r from-accent to-accent-2 bg-clip-text text-transparent">verifiable</span> scores.
     </h1>
 
     <p class="mt-6 max-w-2xl text-[15px] leading-relaxed text-muted sm:text-base">
@@ -34,27 +35,31 @@ const stats = [
       Every number on this page is reproducible.
     </p>
 
-    <dl class="reveal mt-12 flex flex-wrap items-start gap-x-10 gap-y-7 border-t border-edge pt-7">
+    <dl class="reveal mt-12 grid grid-cols-2 gap-4 border-t border-edge pt-8 sm:grid-cols-3 lg:grid-cols-6">
       {stats.map((s) => (
-        <div class="min-w-24">
-          <dd class="font-display text-3xl font-semibold tracking-tight tabular-nums">
-            <span data-count-to={s.count} data-format={s.int ? "int" : "dec"}>0</span>
+        <div class="glass-card rounded-xl p-4 transition-transform hover:-translate-y-1">
+          <dd class="font-display text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">
+            <span data-count-to={s.count} data-format={s.int ? "int" : "dec"}>{s.int ? s.count.toLocaleString("en-US") : s.count}</span>
           </dd>
-          <dt class="mt-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted">{s.label}</dt>
+          <dt class="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-muted">{s.label}</dt>
         </div>
       ))}
-      <div class="min-w-40">
-        <dd class="font-display text-3xl font-semibold tracking-tight">
-          {champ ? pct(champ.overall) : "—"}
+
+      <div class="glass-card rounded-xl p-4 transition-transform hover:-translate-y-1 border-accent/30 bg-accent/5">
+        <dd class="flex items-center gap-1.5 font-display text-2xl font-semibold tracking-tight sm:text-3xl text-accent">
+          <span>🏆</span>
+          <span>{champ ? pct(champ.overall) : "—"}</span>
         </dd>
-        <dt class="mt-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
-          Top overall · {champ?.name ?? "no runs yet"}
+        <dt class="mt-1 truncate font-mono text-[10px] uppercase tracking-[0.16em] text-muted" title={champ?.name}>
+          Top · {champ?.name ?? "no runs yet"}
         </dt>
       </div>
-      <div class="min-w-32">
-        <dd class="font-mono text-lg font-medium leading-[2.1rem] text-fg">{fmtDate(summary.run_timestamp)}</dd>
-        <dt class="mt-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted">Last run (UTC)</dt>
+
+      <div class="glass-card rounded-xl p-4 transition-transform hover:-translate-y-1">
+        <dd class="font-mono text-base font-semibold leading-7 text-fg sm:text-lg">{fmtDate(summary.run_timestamp)}</dd>
+        <dt class="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-muted">Last run (UTC)</dt>
       </div>
     </dl>
   </div>
 </section>
+

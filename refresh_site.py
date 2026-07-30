@@ -157,11 +157,23 @@ def build_summary(config: Config, results: dict, run_timestamp: str | None = Non
     }
 
 
+import math
+
+def _sanitize_json(obj: any) -> any:
+    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    if isinstance(obj, dict):
+        return {k: _sanitize_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_json(v) for v in obj]
+    return obj
+
 def refresh_site(
     config: Config, results: dict, run_timestamp: str | None = None, path: Path = SITE_DATA_PATH
 ) -> Path:
     """Build the summary snapshot and write it atomically. Returns the path."""
     summary = build_summary(config, results, run_timestamp)
+    summary = _sanitize_json(summary)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")

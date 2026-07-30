@@ -58,12 +58,30 @@ def _completion_with_fallback(kwargs: dict[str, Any]) -> Any:
     and says *which* parameter was dropped (the old code blindly stripped
     ``reasoning_effort`` on any "not supported" error, silently disabling
     thinking for reasoning models)."""
+    api_key = kwargs.get("api_key")
+
+    def _sanitize(exc: Exception) -> Exception:
+        if not api_key:
+            return exc
+        err_str = str(exc)
+        if api_key in err_str:
+            safe_str = err_str.replace(api_key, "***")
+            try:
+                new_exc = type(exc)(safe_str)
+                new_exc.__traceback__ = exc.__traceback__
+                return new_exc
+            except Exception:
+                new_exc = RuntimeError(safe_str)
+                new_exc.__traceback__ = exc.__traceback__
+                return new_exc
+        return exc
+
     try:
         return litellm.completion(**kwargs)
     except Exception as e:
         msg = str(e).lower()
         if not any(hint in msg for hint in _PARAM_ERROR_HINTS):
-            raise
+            raise _sanitize(e) from None
 
         dropped: list[str] = []
         if "reasoning_effort" in kwargs and ("reasoning" in msg or "reasoning_effort" in msg):
@@ -85,11 +103,14 @@ def _completion_with_fallback(kwargs: dict[str, Any]) -> Any:
                 kwargs.pop("temperature", None)
                 dropped.append("temperature")
         if not dropped:
-            raise
+            raise _sanitize(e) from None
         console.print(
             f"[dim]Model {kwargs.get('model')} rejected a parameter; retrying without {', '.join(dropped)}.[/dim]"
         )
-        return litellm.completion(**kwargs)
+        try:
+            return litellm.completion(**kwargs)
+        except Exception as e2:
+            raise _sanitize(e2) from None
 
 
 @dataclass

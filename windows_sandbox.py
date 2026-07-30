@@ -457,7 +457,7 @@ class _PathGatekeeper:
             path = os.fspath(path)
         if isinstance(path, bytes):
             path = os.fsdecode(path)
-        s = str(path)
+        s = str(path).replace("/", "\\")
         if not s:
             raise SandboxSecurityError("Sandbox: empty path rejected")
         if s.startswith(("\\\\?\\", "\\\\.\\", "\\\\")):
@@ -621,6 +621,15 @@ class ChildJob:
     handle: int | None
     note: str = ""
 
+    def __del__(self) -> None:
+        self.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
     def assign(self, process_handle: int) -> bool:
         if not self.handle:
             return False
@@ -688,6 +697,13 @@ class _TokenGuard:
         self._handles: list = []
 
     def engage(self) -> None:
+        try:
+            self._engage_inner()
+        except OSError:
+            self.revert()
+            raise
+
+    def _engage_inner(self) -> None:
         h_proc = kernel32.GetCurrentProcess()
 
         h_tok = HANDLE()
@@ -973,9 +989,9 @@ class _PythonHookGuard:
         ssl_mod = sys.modules.get("ssl")
         if ssl_mod is not None:
             self._swap(ssl_mod, "wrap_socket", _raiser("ssl.wrap_socket"))
-            ctx = getattr(ssl_mod, "SSLContext", None)
-            if ctx is not None:
-                self._swap(ctx, "wrap_socket", _raiser("SSLContext.wrap_socket"))
+            for name in ("SSLContext", "create_default_context", "_create_unverified_context", "_create_default_https_context"):
+                if hasattr(ssl_mod, name):
+                    self._swap(ssl_mod, name, _raiser(f"ssl.{name} (network)"))
 
         # --- introspection / hooks on the interpreter itself ---
         if self.policy.block_introspection:
@@ -1220,7 +1236,7 @@ def run_in_sandbox(func_to_test: Callable, *args,
         result.thread_time = worker_box.get("thread_time", 0.0)
         result.value = worker_box.get("value")
         result.exception = worker_box.get("exception")
-        if result.timed_out and result.exception is None:
+        if result.timed_out and (result.exception is None or isinstance(result.exception, SystemExit)):
             result.exception = TimeoutError(
                 f"sandboxed call exceeded timeout={timeout}")
         result.ok = (not result.timed_out) and (result.exception is None)

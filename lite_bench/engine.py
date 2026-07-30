@@ -154,7 +154,7 @@ def process_question(
                 break
 
             err_msg_str = str(e)
-            if isinstance(e, RuntimeError) and err_msg_str == last_error_msg:
+            if err_msg_str == last_error_msg:
                 consecutive_same_error += 1
             else:
                 consecutive_same_error = 1
@@ -167,9 +167,10 @@ def process_question(
                 break
 
             err_str = str(e).lower()
-            backoff = min(60.0, 5.0 * (2 ** min(attempt - 1, 4))) + random.uniform(0, 5.0)
+            backoff = min(60.0, 5.0 * (2 ** min(attempt - 1, 4)))
             if "429" in err_str or "rate limit" in err_str:
                 backoff = max(60.0, backoff)
+            backoff += random.uniform(0, 5.0)
             if on_retry:
                 on_retry(
                     model.name,
@@ -214,23 +215,37 @@ def process_question(
             "response": f"[Error: {err_msg[:500]}]",
         }
 
-    # Separate evaluation try-block — evaluation errors score 0.0 and are never retried against provider
+    # Evaluate exactly ONCE. evaluate_detailed is the single source of truth
+    # for both the score and the judge metadata; routing everything through it
+    # means code-execution benchmarks run the sandbox a single time per question
+    # (the old path called evaluate() AND evaluate_detailed(), executing model
+    # code twice — 2x cost plus flaky port-binding collisions on network tasks
+    # and possible score/judge-log divergence). Benchmarks that only override
+    # evaluate() are covered by the base evaluate_detailed, which delegates to
+    # evaluate(). Non-dict returns (e.g. bare Mocks in tests) fall back to a
+    # direct evaluate() call.
     try:
-        score = float(bench_obj.evaluate(q, gen_result.text))
-        expected_answer = str(q.get("answer") or q.get("target") or "N/A")
-        extracted_answer = "N/A"
-        judge_response = f"Evaluated score: {score}"
-
-        # Populate rich visualizer metadata if available
+        eval_info = None
         if hasattr(bench_obj, "evaluate_detailed"):
-            try:
-                eval_info = bench_obj.evaluate_detailed(q, gen_result.text)
-                if isinstance(eval_info, dict):
-                    expected_answer = str(eval_info.get("expected_answer", expected_answer))
-                    extracted_answer = str(eval_info.get("extracted_answer", extracted_answer))
-                    judge_response = str(eval_info.get("judge_response", judge_response))
-            except Exception:
-                pass
+            candidate = bench_obj.evaluate_detailed(q, gen_result.text)
+            if isinstance(candidate, dict):
+                eval_info = candidate
+
+        if eval_info is not None:
+            score = float(eval_info.get("score", 0.0))
+            expected_answer = str(
+                eval_info.get("expected_answer")
+                or q.get("answer") or q.get("target") or "N/A"
+            )
+            extracted_answer = str(eval_info.get("extracted_answer", "N/A"))
+            judge_response = str(
+                eval_info.get("judge_response", f"Evaluated score: {score}")
+            )
+        else:
+            score = float(bench_obj.evaluate(q, gen_result.text))
+            expected_answer = str(q.get("answer") or q.get("target") or "N/A")
+            extracted_answer = "N/A"
+            judge_response = f"Evaluated score: {score}"
 
         status = "success"
         err_msg = None
@@ -350,6 +365,12 @@ def run_engine(
                     callbacks.on_event(model.name, f"No questions loaded for {bench_name}")
                     continue
 
+                # Surface pre-sampling exclusions (e.g. code tasks the sandbox
+                # cannot run) so a score is auditable in the log and results.
+                exclusion_note = getattr(bench_obj, "exclusion_note", lambda: None)()
+                if exclusion_note:
+                    callbacks.on_event(model.name, exclusion_note)
+
                 q_hash = compute_question_hash(questions)
 
                 existing_b = results.get(model.name, {}).get(bench_name)
@@ -440,7 +461,7 @@ def run_engine(
                 except Exception as loop_err:
                     callbacks.on_event(model.name, f"Execution error in benchmark pool: {loop_err}")
                 finally:
-                    executor.shutdown(wait=False, cancel_futures=True)
+                    executor.shutdown(wait=True, cancel_futures=True)
 
                 if fatal_encountered:
                     callbacks.on_event(
@@ -464,6 +485,7 @@ def run_engine(
                     "total": total_count,
                     "attempted": len(details),
                     "total_questions": len(questions),
+                    "excluded_count": getattr(bench_obj, "excluded_count", 0),
                     "eval_error_count": len(eval_errors),
                     "provider_error_count": len(provider_errors),
                     "truncated_count": len(truncated_items),

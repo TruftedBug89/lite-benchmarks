@@ -9,6 +9,7 @@ import sys
 import tempfile
 import threading
 import time
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -37,6 +38,15 @@ FATAL_PATTERNS = (
     "insufficient_quota",
     "credit balance is too low",
 )
+
+def _sanitize_json(obj: any) -> any:
+    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    if isinstance(obj, dict):
+        return {k: _sanitize_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_json(v) for v in obj]
+    return obj
 
 
 def is_fatal_error(exc: Exception) -> bool:
@@ -174,6 +184,7 @@ def save_results(
     # so no cross-drive rename failure on Windows). Clean up the temp file on any
     # error, and retry the replace a few times in case Windows has the target
     # briefly locked (editor/antivirus/indexer) rather than aborting the run.
+    payload = _sanitize_json(payload)
     dir_path = target_path.parent
     temp_name = None
     try:
@@ -218,20 +229,32 @@ def append_run_history(results: dict, config: Config, results_dir: str = "result
     os.makedirs(results_dir, exist_ok=True)
     hp = _history_path(results_dir)
 
-    with _history_lock:
-        history: list[dict] = []
-        if hp.is_file():
-            try:
-                data = json.loads(hp.read_text(encoding="utf-8"))
-                history = data if isinstance(data, list) else data.get("runs", [])
-            except json.JSONDecodeError:
+    lock_dir = hp.with_suffix(".lock")
+    start_time = time.time()
+    while True:
+        try:
+            os.mkdir(lock_dir)
+            break
+        except FileExistsError:
+            if time.time() - start_time > 30.0:
+                break
+            time.sleep(0.1)
+
+    try:
+        with _history_lock:
+            history: list[dict] = []
+            if hp.is_file():
                 try:
-                    os.replace(hp, hp.with_suffix(".json.corrupt"))
+                    data = json.loads(hp.read_text(encoding="utf-8"))
+                    history = data if isinstance(data, list) else data.get("runs", [])
+                except json.JSONDecodeError:
+                    try:
+                        os.replace(hp, hp.with_suffix(".json.corrupt"))
+                    except OSError:
+                        pass
+                    history = []
                 except OSError:
-                    pass
-                history = []
-            except OSError:
-                history = []
+                    history = []
 
         enabled_names = set(config.enabled_benchmarks().keys())
         models_snapshot: dict[str, dict] = {}
@@ -258,6 +281,7 @@ def append_run_history(results: dict, config: Config, results_dir: str = "result
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "models": models_snapshot,
         })
+        history = _sanitize_json(history)
 
         tmp_name = None
         try:
@@ -282,6 +306,11 @@ def append_run_history(results: dict, config: Config, results_dir: str = "result
                     os.unlink(tmp_name)
                 except OSError:
                     pass
+    finally:
+        try:
+            os.rmdir(lock_dir)
+        except OSError:
+            pass
 
 
 def load_run_history(results_dir: str = "results") -> list[dict]:

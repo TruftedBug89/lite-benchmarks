@@ -14,7 +14,7 @@ from rich.console import Console
 from .config import BenchmarkConfig, Settings
 from .datasets import load_questions
 from .ifeval_verifiers import verify_all
-from .sandbox import execute_sandboxed
+from .sandbox import execute_sandboxed, scan_code
 
 console = Console()
 
@@ -50,6 +50,39 @@ def _strip_code_blocks(text: str) -> str:
     return textwrap.dedent(text).strip()
 
 
+def _extract_sci_number(text: str) -> str | None:
+    """Parse a scientific-notation number the plain regex would mangle.
+
+    Handles both programmer notation (``4.4e-9``, ``5.07E+1``) and the LaTeX
+    form models favour for physics answers (``4.4 \\times 10^{-9}``,
+    ``2.5 \\cdot 10^{3}``). Returns the value as a plain decimal string so
+    callers can ``float()`` it directly, or ``None`` if nothing matches. This
+    closes a factual hole: the plain number regex would pull just the exponent
+    out of ``\\boxed{4.4 \\times 10^{-9}}`` and score the answer wrong.
+    """
+    m = re.search(
+        r"(-?(?:\d+(?:\.\d+)?|\.\d+))\s*[eE]\s*([+-]?\d+)",
+        text,
+    )
+    if m:
+        try:
+            return repr(float(f"{m.group(1)}e{m.group(2)}"))
+        except ValueError:
+            return None
+    m = re.search(
+        r"(-?(?:\d+(?:\.\d+)?|\.\d+))\s*(?:\\times|\\cdot|\*|×)\s*10\s*\^\s*\{?\s*([+-]?\d+)\s*\}?",
+        text,
+    )
+    if m:
+        try:
+            # Build the same e-notation string as the programmer form so both
+            # paths share one float round-trip (no mantissa*power artefacts).
+            return repr(float(f"{m.group(1)}e{m.group(2)}"))
+        except (ValueError, OverflowError):
+            return None
+    return None
+
+
 def _extract_number(text: str) -> str | None:
     m = re.search(r"####\s*(-?[\d,]+(?:\.\d+)?)", text)
     if m:
@@ -65,6 +98,18 @@ def _extract_number(text: str) -> str | None:
     # Avoid extracting isolated digits from LaTeX fractions like \frac{3}{5}, \dfrac{3}{5}, \tfrac{3}{5}
     cleaned = re.sub(r"\\(?:d|t)?frac\{[^{}]+\}\{[^{}]+\}", "", text)
     cleaned = _clean_latex(cleaned)
+
+    # Scientific notation must take priority over the plain-number scan: the
+    # plain regex would otherwise grab the exponent digits of "4.4e-09" (-> "9")
+    # or the base of a "\times 10^n" form. This matters for both SciBench golds
+    # (floats rendered as 4.4e-09) and model answers. Only fires when an actual
+    # mantissa+exponent pair is present, so plain-number cases are unaffected.
+    sci = _extract_sci_number(boxed) if boxed else None
+    if sci is None:
+        sci = _extract_sci_number(cleaned)
+    if sci is not None:
+        return sci
+
     # The lookahead deliberately allows a trailing sentence period ("...is 42.")
     # while the lookbehind still stops us splitting decimals like 3.14.
     nums = re.findall(r"(?<![\d\w.-])-?[\d,]+(?:\.\d+)?(?![\d\w-])", cleaned)
@@ -174,6 +219,43 @@ def _extract_boxed(text: str) -> str | None:
     return None
 
 
+def _canonical_solution_gradeable(code: str | None) -> bool:
+    """True iff a dataset's reference solution passes the sandbox AST scan.
+
+    Used as a pre-sampling ``row_filter`` for code-execution benchmarks so we
+    never ask a model to solve a task whose own canonical solution the sandbox
+    would reject (e.g. a forced ``import subprocess``). Such rows are
+    ungradeable by construction — every correct answer scores 0 — so excluding
+    them BEFORE sampling keeps ``num_samples`` an honest count of passable tasks
+    instead of silently deflating the score. File-I/O, ``os``/``shutil``, and
+    loopback-network tasks are NOT excluded: the runtime confinement shim
+    (sandbox_child.py) makes those safe, so their solutions scan clean.
+
+    ``code`` may be an indented function-body fragment (HumanEval/MBPP store the
+    body only), so it is dedented before scanning.
+    """
+    if not code or not str(code).strip():
+        return True  # nothing to scan -> don't drop on missing reference code
+    return not scan_code(textwrap.dedent(str(code)))
+
+
+def _bigcodebench_gradeable(raw: dict) -> bool:
+    """BigCodeBench ships the imports + signature in ``code_prompt`` and the
+    reference *body* in ``canonical_solution``; the model is given code_prompt
+    and its completion is executed with code_prompt's header prepended. A task
+    is therefore passable only if that FULL reconstructed solution scans clean —
+    scanning the body alone would miss a blocked import forced by the preamble
+    (e.g. ``import subprocess``/``import psutil``), which the model can never
+    avoid emitting."""
+    prompt = str(raw.get("code_prompt") or "")
+    header = prompt.split("\ndef ", 1)[0] if "\ndef " in prompt else prompt
+    body = textwrap.dedent(str(raw.get("canonical_solution") or ""))
+    full = (header + "\n" + body).strip()
+    if not full:
+        return True
+    return not scan_code(full)
+
+
 def _execute_code(
     untrusted_code: str, trusted_code: str, timeout: int, *, allow_execution: bool = False
 ) -> bool:
@@ -224,6 +306,23 @@ class BenchmarkBase(ABC):
         self.config = config
         self.settings = settings
         self._questions: list[dict] | None = None
+        self._filter_stats: dict | None = None
+
+    @property
+    def excluded_count(self) -> int:
+        """Number of dataset rows dropped by ``row_filter`` before sampling."""
+        return int((self._filter_stats or {}).get("excluded", 0))
+
+    def exclusion_note(self) -> str | None:
+        """Human-readable note about pre-sampling exclusions, or None if none."""
+        n = self.excluded_count
+        if not n:
+            return None
+        return (
+            f"{self.display_name or self.name}: excluded {n} ungradeable task(s) "
+            "before sampling (reference solution requires sandbox-blocked "
+            "constructs, e.g. subprocess/psutil/sys); the graded pool is passable by construction."
+        )
 
     def prepare(self, raw: dict) -> dict:
         """Hook to normalize/prepare a raw question dict once upon loading."""
@@ -242,7 +341,9 @@ class BenchmarkBase(ABC):
             # Only pass a filter when a subclass actually overrides row_filter,
             # so unrestricted benchmarks skip the full-dataset scan.
             rf = None if type(self).row_filter is BenchmarkBase.row_filter else self.row_filter
-            raw_qs = load_questions(self.config, self.settings, row_filter=rf)
+            stats: dict | None = {} if rf is not None else None
+            raw_qs = load_questions(self.config, self.settings, row_filter=rf, filter_stats=stats)
+            self._filter_stats = stats
             prepared = [self.prepare(q) for q in raw_qs]
             self._questions = [q for q in prepared if not q.get("_skip", False)]
         return self._questions
@@ -281,6 +382,11 @@ class HumanEvalBenchmark(BenchmarkBase):
     name = "humaneval"
     display_name = "HumanEval"
     requires_code_execution = True
+
+    def row_filter(self, raw: dict) -> bool:
+        # Drop tasks whose reference solution the sandbox would reject (e.g.
+        # HumanEval/160 uses eval()), so every sampled task is passable.
+        return _canonical_solution_gradeable(raw.get("canonical_solution"))
 
     def format_prompt(self, q: dict) -> str:
         return (
@@ -335,6 +441,11 @@ class MBPPBenchmark(BenchmarkBase):
     name = "mbpp"
     display_name = "MBPP"
     requires_code_execution = True
+
+    def row_filter(self, raw: dict) -> bool:
+        # Drop tasks whose reference solution the sandbox would reject (e.g.
+        # MBPP/596 imports sys), so every sampled task is passable.
+        return _canonical_solution_gradeable(raw.get("code"))
 
     def format_prompt(self, q: dict) -> str:
         prompt = q.get("prompt") or q.get("text", "")
@@ -392,6 +503,14 @@ class BigCodeBenchBenchmark(BenchmarkBase):
     name = "bigcodebench"
     display_name = "BigCodeBench"
     requires_code_execution = True
+
+    def row_filter(self, raw: dict) -> bool:
+        # Drop tasks whose FULL reference solution (forced code_prompt header +
+        # body) the sandbox would reject even with the runtime confinement shim
+        # — i.e. tasks that force an unconfineable import like subprocess/psutil/
+        # sys. File-I/O, os/shutil, and loopback-network tasks scan clean and
+        # stay in the pool.
+        return _bigcodebench_gradeable(raw)
 
     def format_prompt(self, q: dict) -> str:
         entry = q.get("entry_point", "task_func")
@@ -851,11 +970,15 @@ class SciBenchBenchmark(BenchmarkBase):
             g = float(gold_str)
         except ValueError:
             return 0.0
-        # Relative tolerance (matches SciBench's evaluator). The previous
-        # absolute <1e-4 was wrong both ways: it rejected a 5-sig-fig answer to
-        # a large gold (e.g. 299792458 vs 300000000) yet accepted 50% error on a
-        # tiny gold (0.00015 vs 0.0001).
-        return 1.0 if math.isclose(p, g, rel_tol=1e-2, abs_tol=1e-8) else 0.0
+        # Relative tolerance (matches SciBench's evaluator). The absolute floor
+        # must SCALE with the gold's magnitude: a fixed abs_tol (the old 1e-8)
+        # is larger than many physics golds (e.g. 4.4e-9) and would mark ANY two
+        # sub-1e-8 answers equal. Tying the floor to max(1, |g|) keeps a tight
+        # 1e-9 absolute band for O(1) answers (and an exact-ish zero check) while
+        # letting large golds absorb representation noise without accepting the
+        # 50%-error case the relative term already rejects.
+        abs_floor = 1e-9 * max(1.0, abs(g))
+        return 1.0 if math.isclose(p, g, rel_tol=1e-2, abs_tol=abs_floor) else 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -918,6 +1041,70 @@ def _normalize_latex(s: str) -> str:
     return s
 
 
+def _latex_to_sympy(s: str) -> str:
+    """Best-effort conversion of a normalized LaTeX answer to a sympy-parseable
+    string. Handles the forms MATH-500 answers actually use (fractions, roots,
+    powers, pi, implicit multiplication). Anything exotic falls through and the
+    caller's try/except treats it as non-equivalent — this only ever ADDS true
+    matches, never forces one."""
+    t = s
+    for _ in range(6):  # nested \frac{...}{...} -> ((...)/(...))
+        t2 = re.sub(r"\\frac\{([^{}]+)\}\{([^{}]+)\}", r"((\1)/(\2))", t)
+        if t2 == t:
+            break
+        t = t2
+    for _ in range(4):  # nested \sqrt{...} -> sqrt(...)
+        t2 = re.sub(r"\\sqrt\{([^{}]+)\}", r"sqrt(\1)", t)
+        if t2 == t:
+            break
+        t = t2
+    t = t.replace(r"\pi", "pi")
+    t = t.replace(r"\ln", "ln")
+    t = t.replace(r"\log", "log")
+    t = t.replace(r"\cdot", "*").replace(r"\times", "*")
+    t = t.replace("^", "**")
+    # Implicit multiplication: "3sqrt(2)" -> "3*sqrt(2)", "2pi" -> "2*pi",
+    # "(a)(b)" -> "(a)*(b)", "sqrt(2)sqrt(3)" -> "sqrt(2)*sqrt(3)".
+    t = re.sub(r"(\d)([A-Za-z(])", r"\1*\2", t)
+    t = re.sub(r"\)(\d)", r")*\1", t)
+    t = re.sub(r"\)([A-Za-z(])", r")*\1", t)
+    return t
+
+
+def _symbolic_equivalent(pred: str, gold: str) -> bool:
+    """Deterministic symbolic equivalence via sympy (no LLM, no network).
+
+    Returns True only when sympy can prove ``pred - gold`` simplifies to zero
+    or both sides numerically evaluate to the same constant. Any parse failure
+    or exception returns False, so this is a safe fallback that strictly
+    extends the normalized-string match (e.g. ``2^5`` == ``32``,
+    ``\\frac{1}{2}`` == ``0.5``) while preserving false-positive guards
+    (``\\sqrt{2}`` != ``2``).
+    """
+    if not pred or not gold or len(pred) > 120 or len(gold) > 120:
+        return False
+    try:
+        import sympy
+        from sympy.parsing.sympy_parser import parse_expr
+
+        global_dict = {"__builtins__": {}}
+        global_dict.update(sympy.__dict__)
+        gp = parse_expr(_latex_to_sympy(gold), evaluate=False, global_dict=global_dict)
+        pp = parse_expr(_latex_to_sympy(pred), evaluate=False, global_dict=global_dict)
+        free = gp.free_symbols | pp.free_symbols
+        if free:
+            # Non-closed-form answers (contain a variable) are out of scope for
+            # numeric fallback; only accept a proven symbolic identity.
+            return bool(sympy.simplify(gp - pp) == 0)
+        if sympy.simplify(gp - pp) == 0:
+            return True
+        diff = complex(sympy.N(gp - pp, 20))
+        scale = max(1.0, abs(complex(sympy.N(gp, 20))))
+        return abs(diff) <= 1e-9 * scale
+    except Exception:
+        return False
+
+
 class MATH500Benchmark(BenchmarkBase):
     name = "math_500"
     display_name = "MATH-500"
@@ -942,6 +1129,15 @@ class MATH500Benchmark(BenchmarkBase):
         if pred_boxed and _normalize_latex(pred_boxed) == _normalize_latex(gold_boxed):
             return 1.0
 
+        # Deterministic symbolic equivalence for factually-equal answers that
+        # differ in form (2^5 vs 32, \frac{1}{2} vs 0.5, \sqrt{4} vs 2). Runs
+        # only on the boxed prediction so prose digits can't force a match, and
+        # fails closed to the strict checks below on any parse error.
+        if pred_boxed and _symbolic_equivalent(
+            _normalize_latex(pred_boxed), _normalize_latex(gold_boxed)
+        ):
+            return 1.0
+
         # Numeric comparison is ONLY valid when the gold answer is itself a plain
         # number. Comparing against _extract_number(gold) would pull incidental
         # digits out of symbolic gold (\sqrt{2}->"2", 3\sqrt{2}->"2", 2^5->"5")
@@ -953,7 +1149,7 @@ class MATH500Benchmark(BenchmarkBase):
             # Prefer the boxed prediction; otherwise a number from the prose.
             pred_box = _extract_number(pred_boxed) if pred_boxed else None
             pred_num = pred_box or _extract_number(response)
-            if pred_num is not None and re.fullmatch(r"-?[\d.]+", pred_num):
+            if pred_num is not None and re.fullmatch(r"-?[\d.]+(?:[eE][+-]?\d+)?", pred_num):
                 try:
                     return 1.0 if abs(gold_num - float(pred_num)) < 1e-6 else 0.0
                 except ValueError:
@@ -1221,11 +1417,9 @@ class TauBenchBenchmark(BenchmarkBase):
                 pred_args = json.loads(pred_args)
             except Exception:
                 pred_args = {}
-        p_norm = (
-            {str(k).lower(): _norm_arg_value(v) for k, v in pred_args.items()}
-            if isinstance(pred_args, dict)
-            else {}
-        )
+        if not isinstance(pred_args, dict):
+            return 0.0
+        p_norm = {str(k).lower(): _norm_arg_value(v) for k, v in pred_args.items()}
         if not gold_args:
             # Gold expects no arguments: accept only if the model sent none.
             return 1.0 if not p_norm else 0.0

@@ -14,26 +14,22 @@ from lite_bench.sandbox import execute_sandboxed, scan_code
 @pytest.mark.parametrize(
     "bad_code",
     [
-        "import os",
+        # os/shutil imports are allowed at the AST layer (the runtime shim
+        # confines them), but their dangerous ACTIONS stay rejected here because
+        # the scan still flags process-control calls and blocked builtins.
         "import os\nos.system('whoami')",
-        "from os import system",
         "import subprocess",
-        "import shutil",
-        "import pathlib",
-        "import socket",
-        "import requests",
-        "from urllib import request",
+        "import psutil",
+        "shutil.rmtree('/')",
         "import ctypes",
         "import pickle",
         "import importlib",
         "import sys\nprint(sys.modules)",
-        "import io",
-        "import zipfile",
         "import multiprocessing",
         "import asyncio",
         "import winreg",
-        "open('secret.txt')",
-        "x = open",
+        "import ftplib",
+        "import paramiko",
         "eval('1+1')",
         "exec('pass')",
         "compile('pass', '<s>', 'exec')",
@@ -52,7 +48,6 @@ from lite_bench.sandbox import execute_sandboxed, scan_code
         "gen.gi_frame",
         "something.system('dir')",
         "mod.popen('calc')",
-        "shutil.rmtree('/')",
     ],
 )
 def test_scan_rejects_dangerous_code(bad_code: str):
@@ -75,7 +70,7 @@ def test_scan_rejects_dangerous_code(bad_code: str):
         "import pandas as pd\ndef f(df):\n    return df.eval('a + b')",
         "from scipy.optimize import minimize\ndef f():\n    return minimize(lambda x: x*x, 0).x",
         "import sympy as sp",
-        "class Node:\n    def __init__(self, v):\n        self.v = v\n    def __repr__(self):\n        return str(self.v)",
+        "class Node:\n    def __init__(self, v):\n        self.v = v\n    def __repr__(self): return str(self.v)",
         "class A:\n    pass\nclass B(A):\n    def f(self):\n        return super().f()",
         "def f(xs):\n    return [x*x for x in xs if x > 0]",
         "from dataclasses import dataclass\n@dataclass\nclass P:\n    x: int",
@@ -85,6 +80,28 @@ def test_scan_rejects_dangerous_code(bad_code: str):
         "import unittest\nclass T(unittest.TestCase):\n    pass",
         "x = float('inf')\nimport threading",
         "from functools import lru_cache\n@lru_cache(maxsize=None)\ndef f(n):\n    return n",
+        # Confined-at-runtime modules: allowed by the AST scan because the
+        # in-child shim restricts what they can DO (file I/O -> sandbox dir,
+        # sockets -> loopback, os/shutil process control -> blocked). Blocking
+        # them made BigCodeBench unpassable (it forces these imports).
+        "import os",
+        "import shutil",
+        "import socket",
+        "import ssl, select",
+        "import requests",
+        "from urllib import request",
+        "import io",
+        "import pathlib",
+        "import tempfile",
+        "import glob",
+        "import zipfile, tarfile, gzip, bz2, lzma",
+        "import sqlite3",
+        "import smtplib",
+        "import codecs",
+        "import ntpath, posixpath, stat",
+        "open('data.txt')",
+        "x = open",
+        "with open('out.txt', 'w') as f:\n    f.write('hi')",
     ],
 )
 def test_scan_allows_legitimate_code(good_code: str):
@@ -176,3 +193,129 @@ def test_scan_rejects_name_based_dunder_lookup():
 def test_scan_rejects_reflection_modules():
     for mod in ("import gc", "import ast", "import pkgutil", "import _thread", "import windows_sandbox"):
         assert scan_code(mod), f"expected violation for: {mod}"
+
+
+# ---------------------------------------------------------------------------
+# Runtime confinement shim (sandbox_child.py): allowed names, confined actions
+# ---------------------------------------------------------------------------
+
+
+def test_shim_allows_writes_inside_sandbox():
+    """File I/O within the sandbox cwd (where tests create temp files) works."""
+    untrusted = (
+        "with open('out.txt', 'w') as f:\n"
+        "    f.write('hi')\n"
+        "assert open('out.txt').read() == 'hi'"
+    )
+    ok, violations = execute_sandboxed(untrusted, "assert True", timeout=20, allow_execution=True)
+    assert ok, violations
+
+
+def test_shim_blocks_read_outside_sandbox():
+    """Reading a host file outside the sandbox must fail (PermissionError)."""
+    host = _host_file()
+    untrusted = f"open(r'{host}').read()"
+    ok, _ = execute_sandboxed(untrusted, "assert True", timeout=20, allow_execution=True)
+    assert not ok
+
+
+def test_shim_blocks_write_outside_sandbox():
+    untrusted = (
+        "import tempfile, os\n"
+        "p = os.path.join(os.path.dirname(tempfile.gettempdir()), 'evil.txt')\n"
+        "open(p, 'w').write('x')"
+    )
+    ok, _ = execute_sandboxed(untrusted, "assert True", timeout=20, allow_execution=True)
+    assert not ok
+
+
+def test_shim_allows_loopback_socket():
+    """A localhost client/server round-trip must succeed (BigCodeBench echo task)."""
+    untrusted = (
+        "import socket, threading\n"
+        "srv = socket.socket(); srv.bind(('127.0.0.1', 0)); srv.listen(1)\n"
+        "port = srv.getsockname()[1]\n"
+        "def acc():\n"
+        "    c, _ = srv.accept(); c.recv(8); c.send(b'pong'); c.close()\n"
+        "t = threading.Thread(target=acc); t.start()\n"
+        "cl = socket.socket(); cl.connect(('127.0.0.1', port)); cl.send(b'ping')\n"
+        "assert cl.recv(8) == b'pong'\n"
+        "cl.close(); t.join(); srv.close()"
+    )
+    ok, violations = execute_sandboxed(untrusted, "assert True", timeout=20, allow_execution=True)
+    assert ok, violations
+
+
+def test_shim_blocks_nonloopback_socket_fast():
+    """A routed (non-loopback) connect must fail immediately, not hang."""
+    untrusted = (
+        "import socket\n"
+        "s = socket.socket()\n"
+        "s.connect(('8.8.8.8', 53))"  # raises OSError -> nonzero exit
+    )
+    ok, _ = execute_sandboxed(untrusted, "assert True", timeout=20, allow_execution=True)
+    assert not ok
+
+
+def test_shim_confines_sqlite_to_sandbox():
+    inside = (
+        "import sqlite3\n"
+        "con = sqlite3.connect('t.db')\n"
+        "con.execute('create table x(a)'); con.commit(); con.close()"
+    )
+    ok, violations = execute_sandboxed(inside, "assert True", timeout=20, allow_execution=True)
+    assert ok, violations
+    host = _host_file()
+    outside = f"import sqlite3\nsqlite3.connect(r'{host}')"
+    ok2, _ = execute_sandboxed(outside, "assert True", timeout=20, allow_execution=True)
+    assert not ok2
+
+
+def test_shim_allows_os_file_ops_inside_sandbox():
+    """os file calls within the sandbox dir must work (BigCodeBench forces os)."""
+    untrusted = (
+        "import os\n"
+        "os.makedirs('sub', exist_ok=True)\n"
+        "with open(os.path.join('sub', 'x.txt'), 'w') as f:\n"
+        "    f.write('hi')\n"
+        "assert os.path.exists(os.path.join('sub', 'x.txt'))\n"
+        "assert os.listdir('sub') == ['x.txt']"
+    )
+    ok, violations = execute_sandboxed(untrusted, "assert True", timeout=20, allow_execution=True)
+    assert ok, violations
+
+
+def test_shim_blocks_os_file_ops_outside_sandbox():
+    host = _host_file()
+    untrusted = f"import os\nos.remove(r'{host}')"
+    ok, _ = execute_sandboxed(untrusted, "assert True", timeout=20, allow_execution=True)
+    assert not ok
+
+
+def test_shim_blocks_os_process_control():
+    """os is importable but process-spawning actions are blocked at runtime."""
+    for stmt in ("os.system('echo hi')", "os.popen('echo hi')", "os.kill(1, 9)"):
+        untrusted = f"import os\n{stmt}"
+        ok, _ = execute_sandboxed(untrusted, "assert True", timeout=20, allow_execution=True)
+        assert not ok, f"expected runtime block for: {stmt}"
+
+
+def test_shim_blocks_shutil_outside_sandbox():
+    untrusted = f"import shutil\nshutil.rmtree(r'{_host_dir()}')"
+    ok, _ = execute_sandboxed(untrusted, "assert True", timeout=20, allow_execution=True)
+    assert not ok
+
+
+def _host_file() -> str:
+    """A real file guaranteed to live outside any sandbox dir."""
+    import os
+    import sys
+
+    return os.path.join(os.path.dirname(sys.executable), "python.exe")
+
+
+def _host_dir() -> str:
+    import os
+    import sys
+
+    return os.path.dirname(sys.executable)

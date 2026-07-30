@@ -80,7 +80,7 @@ export const CATEGORY_HUES: Record<string, string> = {
 export const pct = (v: number | null, digits = 1): string =>
   v == null ? "—" : `${(v * 100).toFixed(digits)}%`;
 
-export const fmtInt = (v: number): string => v.toLocaleString("en-US");
+export const fmtInt = (v: number | null | undefined): string => v == null ? "—" : v.toLocaleString("en-US");
 
 export const fmtCost = (v: number | null): string =>
   v == null ? "—" : `$${v.toFixed(v < 1 ? 4 : 2)}`;

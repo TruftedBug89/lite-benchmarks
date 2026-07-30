@@ -67,9 +67,12 @@ def test_run_source_env_is_scrubbed(monkeypatch, tmp_path):
     assert res.ok, res.notes
 
 
-def test_run_in_sandbox_blocks_file_escape(tmp_path):
+def test_run_in_sandbox_blocks_file_escape(tmp_path, tmp_path_factory):
+    outside_dir = tmp_path_factory.mktemp("outside")
+    target_file = os.path.join(str(outside_dir), "pwned.txt")
+
     def evil():
-        with open(os.path.join(os.path.expanduser("~"), "pwned.txt"), "w") as f:
+        with open(target_file, "w") as f:
             f.write("nope")
 
     res = run_in_sandbox(evil, timeout=10, policy=_policy(str(tmp_path)))

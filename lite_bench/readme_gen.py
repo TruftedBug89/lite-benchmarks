@@ -440,15 +440,18 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
         "- Code benchmarks require explicit opt-in (``allow_unsafe_code_execution``) "
         "and run in a layered sandbox: an AST scan of generated code rejects "
         "destructive / escape constructs, the child runs with a scrubbed environment "
-        "(no API keys, temp working dir, no OS/network/process access), and on "
-        "Windows it is additionally confined by a Job Object that blocks "
-        "grandchild processes and UI access. The opt-in gate is enforced at the "
-        "sandbox layer, so it fails closed even for direct callers."
+        "(no API keys, temp working dir), a runtime confinement shim restricts file "
+        "I/O to the sandbox dir and sockets to loopback, and on Windows it is "
+        "additionally confined by a Job Object that blocks grandchild processes and "
+        "UI access. The opt-in gate is enforced at the sandbox layer, so it fails "
+        "closed even for direct callers. Tasks whose reference solution the sandbox "
+        "cannot run are filtered before sampling, so every graded task is passable."
     )
     _a("- Multiple-choice benchmarks extract the answer letter and compare to ground truth")
     _a(
-        "- Math benchmarks extract boxed/numerical answers and evaluate via "
-        "normalized string or numerical comparison"
+        "- Math benchmarks extract boxed/numerical answers (scientific notation "
+        "included) and evaluate via normalized string, deterministic symbolic "
+        "(sympy) equivalence, or numerical comparison"
     )
     _a("- IFEval uses its 25 strict programmatic verifiers (word count, format, keywords, etc.)")
     _a("- Tau-Bench verifies tool function name AND argument dictionary match")

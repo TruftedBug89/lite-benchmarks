@@ -19,18 +19,23 @@ def load_questions(
     bench: BenchmarkConfig,
     settings: Settings,
     row_filter: Callable[[dict], bool] | None = None,
+    filter_stats: dict | None = None,
 ) -> list[dict]:
     """Load and sample questions from a HuggingFace dataset.
 
     Uses a fixed seed so the same subset is used across runs. When ``row_filter``
     is given it is applied to the FULL dataset *before* sampling, so
     ``num_samples`` reflects the filtered population (e.g. SuperGPQA's "hard"
-    subset) instead of silently shrinking after the fact.
+    subset) instead of silently shrinking after the fact. If ``filter_stats`` is
+    supplied and a filter is active, it is populated with ``available`` /
+    ``pool`` / ``excluded`` counts so callers can report how many rows were
+    dropped and why (e.g. code tasks the sandbox cannot run).
     """
+    filter_id = f"{getattr(row_filter, '__name__', 'lambda')}_{id(row_filter)}" if row_filter is not None else "all"
     cache_key = (
         f"{bench.name}/{bench.dataset}/{bench.subset}/{bench.split}/"
         f"{bench.revision or 'main'}/{bench.num_samples}/{settings.seed}/"
-        f"{'filtered' if row_filter is not None else 'all'}"
+        f"{filter_id}"
     )
     if cache_key in _cache:
         return _cache[cache_key]
@@ -67,6 +72,10 @@ def load_questions(
         if not pool:
             raise ValueError(
                 f"Dataset {bench.dataset!r} has no rows matching the benchmark filter."
+            )
+        if filter_stats is not None:
+            filter_stats.update(
+                {"available": available, "pool": len(pool), "excluded": available - len(pool)}
             )
     else:
         pool = list(range(available))

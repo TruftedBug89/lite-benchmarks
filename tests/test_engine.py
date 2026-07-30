@@ -167,3 +167,39 @@ def test_process_question_stop_during_backoff_cancels():
 
         assert result["status"] == "cancelled"
         assert "error_msg" not in result
+
+
+def test_process_question_evaluates_exactly_once():
+    """When a benchmark provides evaluate_detailed (every real one does), the
+    engine must use it as the single source of truth and NOT also call
+    evaluate() — code-execution benchmarks run the sandbox per call, so a
+    second invocation doubles cost and can collide on bound ports."""
+
+    class CountingBench:
+        name = "counting"
+
+        def format_prompt(self, q):
+            return "p"
+
+        def evaluate(self, q, response):
+            raise AssertionError("evaluate() must not run when evaluate_detailed returns a dict")
+
+        def evaluate_detailed(self, q, response):
+            return {
+                "score": 1.0,
+                "expected_answer": "gold",
+                "extracted_answer": "pred",
+                "judge_response": "single pass",
+            }
+
+    model = ModelConfig(id="test/model", name="Test Model")
+    settings = Settings(max_retries=1)
+
+    with patch("lite_bench.engine.generate", return_value=_ok_gen("pred")):
+        result = process_question(0, {"q": 1}, CountingBench(), model, settings)
+
+    assert result["status"] == "success"
+    assert result["score"] == 1.0
+    assert result["expected_answer"] == "gold"
+    assert result["extracted_answer"] == "pred"
+    assert result["judge_response"] == "single pass"

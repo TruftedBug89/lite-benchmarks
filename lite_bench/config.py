@@ -159,7 +159,13 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         raise FileNotFoundError(f"Config file not found: {config_path}")
 
     with config_path.open(encoding="utf-8") as config_file:
-        raw = yaml.safe_load(config_file) or {}
+        try:
+            raw = yaml.safe_load(config_file)
+        except yaml.YAMLError as e:
+            raise ValueError(f"Invalid YAML syntax in config file: {e}") from e
+        
+        if raw is None:
+            raw = {}
     raw = _mapping(raw, "Configuration")
 
     raw_models = raw.get("models", [])

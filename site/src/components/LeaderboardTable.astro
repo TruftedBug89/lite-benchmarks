@@ -4,6 +4,15 @@ import { fmtInt, heatColor, modelColor, pct, summary } from "../lib/data";
 const models = summary.models;
 const cats = summary.categories;
 const benchBykey = Object.fromEntries(summary.benchmarks.map((b) => [b.key, b]));
+
+const providers = Array.from(new Set(models.map((m) => m.provider))).sort();
+
+const rankBadge = (idx: number) => {
+  if (idx === 0) return "🥇";
+  if (idx === 1) return "🥈";
+  if (idx === 2) return "🥉";
+  return String(idx + 1);
+};
 ---
 
 <section id="leaderboard" class="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
@@ -17,22 +26,50 @@ const benchBykey = Object.fromEntries(summary.benchmarks.map((b) => [b.key, b]))
     </p>
   </div>
 
-  <div class="mt-7 flex flex-wrap gap-2" role="tablist" aria-label="Rank by category">
-    <button class="lb-tab" type="button" data-tab="overall" data-active="true">Overall</button>
-    {cats.map((c) => (
-      <button class="lb-tab" type="button" data-tab={c.key} data-active="false">
-        {c.icon} {c.label}
-      </button>
-    ))}
+  <!-- Search & Filter Controls -->
+  <div class="mt-6 flex flex-wrap items-center justify-between gap-3">
+    <div class="flex flex-wrap items-center gap-2" role="tablist" aria-label="Rank by category">
+      <button class="lb-tab" type="button" data-tab="overall" data-active="true">Overall</button>
+      {cats.map((c) => (
+        <button class="lb-tab" type="button" data-tab={c.key} data-active="false">
+          {c.icon} {c.label}
+        </button>
+      ))}
+    </div>
+
+    <div class="flex items-center gap-2.5 w-full sm:w-auto">
+      <div class="relative flex-1 sm:w-64">
+        <input
+          id="lb-search"
+          type="text"
+          placeholder="Search model or provider..."
+          class="w-full rounded-full border border-edge bg-panel px-3.5 py-1.5 pl-9 font-mono text-xs text-fg placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+        />
+        <svg viewBox="0 0 24 24" class="absolute left-3 top-2.5 size-3.5 text-muted" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="7"></circle>
+          <path d="M21 21l-4.35-4.35" stroke-linecap="round"></path>
+        </svg>
+      </div>
+
+      <select
+        id="lb-provider-select"
+        class="rounded-full border border-edge bg-panel px-3 py-1.5 font-mono text-xs text-fg focus:border-accent focus:outline-none cursor-pointer"
+      >
+        <option value="">All Providers</option>
+        {providers.map((p) => (
+          <option value={p.toLowerCase()}>{p}</option>
+        ))}
+      </select>
+    </div>
   </div>
 
-  <div class="reveal mt-5 overflow-hidden rounded-xl border border-edge bg-panel">
+  <div class="reveal mt-5 overflow-hidden rounded-xl border border-edge bg-panel shadow-sm">
     <div class="overflow-x-auto">
       <table class="w-full min-w-[900px] border-collapse text-left">
         <thead>
-          <tr class="border-b border-edge text-[11px] uppercase tracking-wider text-muted">
+          <tr class="border-b border-edge text-[11px] uppercase tracking-wider text-muted bg-panel-2/40">
             <th class="sticky left-0 z-10 w-14 bg-panel px-4 py-3.5 font-medium">#</th>
-            <th class="sticky left-14 z-10 min-w-60 border-r border-edge bg-panel px-4 py-3.5 font-medium">Model</th>
+            <th class="sticky left-14 z-10 min-w-60 border-r border-edge bg-panel sticky-shadow-left px-4 py-3.5 font-medium">Model</th>
             <th class="lb-sort cursor-pointer select-none px-4 py-3.5 font-medium" data-sort="overall" data-dir="desc">
               Overall<span class="lb-arrow"></span>
             </th>
@@ -49,6 +86,9 @@ const benchBykey = Object.fromEntries(summary.benchmarks.map((b) => [b.key, b]))
               <tr
                 class="lb-row group cursor-pointer border-b border-edge/60 transition-colors hover:bg-panel-2/60"
                 data-overall={m.overall ?? ""}
+                data-name={m.name.toLowerCase()}
+                data-provider={m.provider.toLowerCase()}
+                data-model-id={m.model_id.toLowerCase()}
                 {...Object.fromEntries(cats.map((c) => [`data-${c.key}`, m.categories[c.key] ?? ""]))}
               >
                 <td class="sticky left-0 z-10 bg-panel px-4 py-3.5 group-hover:bg-panel-2">
@@ -56,19 +96,19 @@ const benchBykey = Object.fromEntries(summary.benchmarks.map((b) => [b.key, b]))
                     <svg viewBox="0 0 16 16" class="lb-chev size-3 text-muted" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
                       <path d="M6 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"></path>
                     </svg>
-                    <span class={`lb-rank font-mono text-sm tabular-nums ${i < 3 ? "font-semibold text-accent" : "text-muted"}`}>
-                      {i + 1}
+                    <span class={`lb-rank font-mono text-sm tabular-nums ${i < 3 ? "font-bold text-accent" : "text-muted"}`}>
+                      {rankBadge(i)}
                     </span>
                   </span>
                 </td>
-                <td class="sticky left-14 z-10 border-r border-edge bg-panel px-4 py-3.5 group-hover:bg-panel-2">
+                <td class="sticky left-14 z-10 border-r border-edge bg-panel sticky-shadow-left px-4 py-3.5 group-hover:bg-panel-2">
                   <span class="flex items-center gap-3">
-                    <span class="size-2.5 shrink-0 rounded-full" style={`background:${modelColor(i)}`} aria-hidden="true"></span>
+                    <span class="size-2.5 shrink-0 rounded-full shadow-xs" style={`background:${modelColor(i)}`} aria-hidden="true"></span>
                     <span class="min-w-0">
                       <span class="flex items-center gap-2">
                         <span class="truncate text-sm font-medium">{m.name}</span>
                         {m.thinking_effort && (
-                          <span class="rounded-full border border-edge px-1.5 py-px font-mono text-[10px] text-muted" title="Reasoning model with explicit thinking effort">
+                          <span class="rounded-full border border-edge bg-panel-2/50 px-1.5 py-px font-mono text-[10px] text-muted" title="Reasoning model with explicit thinking effort">
                             🧠 {m.thinking_effort}
                           </span>
                         )}
@@ -100,9 +140,12 @@ const benchBykey = Object.fromEntries(summary.benchmarks.map((b) => [b.key, b]))
               </tr>
               <tr class="lb-detail border-b border-edge/60 bg-panel-2/40">
                 <td colspan={3 + cats.length} class="px-5 py-4 sm:px-7">
-                  <p class="font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
-                    Per-benchmark · {m.completed_benchmarks}/{summary.benchmarks.length} completed
-                  </p>
+                  <div class="flex items-center justify-between gap-2">
+                    <p class="font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
+                      Per-benchmark details · {m.completed_benchmarks}/{summary.benchmarks.length} completed
+                    </p>
+                    <span class="font-mono text-[10px] text-muted">Click headers to sort</span>
+                  </div>
                   <div class="mt-3 flex flex-wrap gap-2">
                     {summary.benchmarks.map((b) => {
                       const e = m.benchmarks[b.key];
@@ -110,16 +153,16 @@ const benchBykey = Object.fromEntries(summary.benchmarks.map((b) => [b.key, b]))
                       const scored = attempted && e.score != null;
                       return (
                         <span
-                          class={`rounded-md border px-2.5 py-1.5 text-xs ${attempted ? "border-edge bg-panel" : "border-edge/50 opacity-45"}`}
+                          class={`rounded-lg border px-3 py-1.5 text-xs transition-all ${attempted ? "border-edge bg-panel shadow-2xs hover:border-edge-strong" : "border-edge/40 opacity-40"}`}
                           title={attempted ? benchBykey[b.key]?.verification : "Not attempted"}
                         >
                           <span class="font-medium">{b.display}</span>{" "}
-                          <span class="font-mono tabular-nums" style={`color:${scored ? heatColor(e.score) : "var(--muted)"}`}>
+                          <span class="font-mono font-semibold tabular-nums" style={`color:${scored ? heatColor(e.score) : "var(--muted)"}`}>
                             {scored ? pct(e.score, 0) : "—"}
                           </span>
                           {attempted && (
-                            <span class="font-mono text-[10px] text-muted">
-                              {" "}{fmtInt(e.correct)}/{fmtInt(e.total)} ±{e.wilson}pp
+                            <span class="font-mono text-[10px] text-muted ml-1">
+                              ({fmtInt(e.correct)}/{fmtInt(e.total)} ±{e.wilson}pp)
                             </span>
                           )}
                         </span>
@@ -135,7 +178,9 @@ const benchBykey = Object.fromEntries(summary.benchmarks.map((b) => [b.key, b]))
     </div>
   </div>
 
-  <p class="mt-3 font-mono text-[11px] text-muted">
-    Click a row for per-benchmark detail · click headers to sort · ±pp = 95% Wilson confidence interval
+  <p class="mt-3 font-mono text-[11px] text-muted flex items-center justify-between flex-wrap gap-2">
+    <span>Click a row for per-benchmark detail · click headers to sort · ±pp = 95% Wilson confidence interval</span>
+    <span id="lb-count-indicator" class="text-accent-2">Showing {models.length} of {models.length} models</span>
   </p>
 </section>
+

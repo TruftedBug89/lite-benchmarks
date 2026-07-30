@@ -10,6 +10,9 @@ import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import { MODEL_COLORS, modelColor, summary } from "./data";
 
+const escapeHtml = (unsafe: string): string => 
+  unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+
 echarts.use([
   BarChart,
   HeatmapChart,
@@ -93,7 +96,7 @@ function costOption(t: Theme): Opt {
       trigger: "item",
       formatter: (p: any) => {
         const [cost, score, tps, name] = p.data;
-        return `<b style="color:${t.fg}">${name}</b><br/>score ${score.toFixed(1)} · $${cost.toFixed(4)}/run<br/>${tps} tok/s out`;
+        return `<b style="color:${t.fg}">${escapeHtml(name)}</b><br/>score ${score.toFixed(1)} · $${cost.toFixed(4)}/run<br/>${tps} tok/s out`;
       },
     },
     xAxis: {
@@ -219,7 +222,7 @@ function heatmapOption(t: Theme): Opt {
       ...tooltip(t),
       formatter: (p: any) => {
         const [x, y, v, correct, total, wilson] = p.data;
-        const name = `<b style="color:${t.fg}">${models[y].name}</b> · ${benches[x].display}`;
+        const name = `<b style="color:${t.fg}">${escapeHtml(models[y].name)}</b> · ${escapeHtml(benches[x].display)}`;
         return v == null
           ? `${name}<br/>not attempted`
           : `${name}<br/>${v}% (${correct}/${total}) ±${wilson}pp`;
@@ -330,7 +333,7 @@ function thinkingOption(t: Theme): Opt {
       trigger: "item",
       formatter: (p: any) => {
         const [think, score, name] = p.data;
-        return `<b style="color:${t.fg}">${name}</b><br/>score ${score.toFixed(1)} · ${kFmt(think)} thinking tok`;
+        return `<b style="color:${t.fg}">${escapeHtml(name)}</b><br/>score ${score.toFixed(1)} · ${kFmt(think)} thinking tok`;
       },
     },
     xAxis: {
