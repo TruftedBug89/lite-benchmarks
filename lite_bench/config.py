@@ -10,6 +10,34 @@ from typing import Any
 
 import yaml
 
+# Documented thinking_effort values (see config.yaml). Validated so a typo like
+# "hig" fails fast at load time instead of being retried per-question per-benchmark.
+_VALID_THINKING_EFFORTS = frozenset(
+    {"max", "xhigh", "ultracode", "high", "medium", "mid", "low", "min"}
+)
+_MODEL_KEYS = frozenset(
+    {"id", "name", "thinking_effort", "max_tokens", "api_base", "api_key_env", "extra_params"}
+)
+_BENCHMARK_KEYS = frozenset(
+    {"enabled", "dataset", "num_samples", "split", "subset", "revision"}
+)
+_SETTINGS_KEYS = frozenset(
+    {
+        "seed",
+        "max_tokens",
+        "temperature",
+        "request_timeout",
+        "code_exec_timeout",
+        "max_retries",
+        "max_concurrency",
+        "max_concurrent_models",
+        "results_dir",
+        "charts_dir",
+        "hf_token_env",
+        "allow_unsafe_code_execution",
+    }
+)
+
 
 @dataclass(frozen=True)
 class ModelConfig:
@@ -19,6 +47,8 @@ class ModelConfig:
     name: str
     thinking_effort: str | None = None
     max_tokens: int | None = None
+    api_base: str | None = None
+    api_key_env: str | None = None
     extra_params: dict[str, Any] = field(default_factory=dict)
 
 
@@ -42,8 +72,12 @@ class Settings:
     temperature: float = 0.0
     request_timeout: int = 120
     code_exec_timeout: int = 15
-    max_retries: int = 3
+    # Attempts per question for transient provider errors. 0 (default) = wait
+    # for a good response indefinitely (until Force Stop); a positive value caps
+    # attempts. Permanent errors (context length, content filter) never retry.
+    max_retries: int = 0
     max_concurrency: int = 5
+    max_concurrent_models: int = 4
     results_dir: str = "results"
     charts_dir: str = "charts"
     hf_token_env: str = "HF_TOKEN"
@@ -73,7 +107,9 @@ class Config:
 
     def category_score(self, bench_scores: Mapping[str, float], category: str) -> float | None:
         scores = [
-            bench_scores[name] for name in self.categories.get(category, []) if name in bench_scores
+            bench_scores[name]
+            for name in self.categories.get(category, [])
+            if name in bench_scores and isinstance(bench_scores[name], (int, float))
         ]
         return sum(scores) / len(scores) if scores else None
 
@@ -123,7 +159,13 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         raise FileNotFoundError(f"Config file not found: {config_path}")
 
     with config_path.open(encoding="utf-8") as config_file:
-        raw = yaml.safe_load(config_file) or {}
+        try:
+            raw = yaml.safe_load(config_file)
+        except yaml.YAMLError as e:
+            raise ValueError(f"Invalid YAML syntax in config file: {e}") from e
+        
+        if raw is None:
+            raw = {}
     raw = _mapping(raw, "Configuration")
 
     raw_models = raw.get("models", [])
@@ -132,14 +174,28 @@ def load_config(path: str | Path = "config.yaml") -> Config:
     models: list[ModelConfig] = []
     for index, value in enumerate(raw_models):
         item = _mapping(value, f"models[{index}]")
+        unknown_model_keys = set(item.keys()) - _MODEL_KEYS
+        if unknown_model_keys:
+            raise ValueError(f"models[{index}] has unknown keys: {sorted(unknown_model_keys)}")
         model_id = _string(item.get("id"), f"models[{index}].id")
         name = _string(item.get("name", model_id), f"models[{index}].name")
         thinking_effort = item.get("thinking_effort")
         if thinking_effort is not None:
             thinking_effort = _string(thinking_effort, f"models[{index}].thinking_effort")
+            if thinking_effort.lower() not in _VALID_THINKING_EFFORTS:
+                raise ValueError(
+                    f"models[{index}].thinking_effort must be one of "
+                    f"{sorted(_VALID_THINKING_EFFORTS)} (got {thinking_effort!r})."
+                )
         max_tokens_val = item.get("max_tokens")
         if max_tokens_val is not None:
             max_tokens_val = _positive_int(max_tokens_val, f"models[{index}].max_tokens")
+        api_base_val = item.get("api_base")
+        if api_base_val is not None:
+            api_base_val = _string(api_base_val, f"models[{index}].api_base")
+        api_key_env_val = item.get("api_key_env")
+        if api_key_env_val is not None:
+            api_key_env_val = _string(api_key_env_val, f"models[{index}].api_key_env")
         extra_params = item.get("extra_params", {})
         if not isinstance(extra_params, Mapping):
             raise ValueError(f"models[{index}].extra_params must be a mapping.")
@@ -149,6 +205,8 @@ def load_config(path: str | Path = "config.yaml") -> Config:
                 name=name,
                 thinking_effort=thinking_effort,
                 max_tokens=max_tokens_val,
+                api_base=api_base_val,
+                api_key_env=api_key_env_val,
                 extra_params=dict(extra_params),
             )
         )
@@ -163,6 +221,11 @@ def load_config(path: str | Path = "config.yaml") -> Config:
     for name, value in raw_benchmarks.items():
         benchmark_name = _string(name, "benchmark name")
         item = _mapping(value, f"benchmarks.{benchmark_name}")
+        unknown_bench_keys = set(item.keys()) - _BENCHMARK_KEYS
+        if unknown_bench_keys:
+            raise ValueError(
+                f"benchmarks.{benchmark_name} has unknown keys: {sorted(unknown_bench_keys)}"
+            )
         enabled = item.get("enabled", True)
         if not isinstance(enabled, bool):
             raise ValueError(f"benchmarks.{benchmark_name}.enabled must be a boolean.")
@@ -206,9 +269,15 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         categories[category_name] = members
 
     raw_settings = _mapping(raw.get("settings", {}), "settings")
+    unknown_settings_keys = set(raw_settings.keys()) - _SETTINGS_KEYS
+    if unknown_settings_keys:
+        raise ValueError(f"settings has unknown keys: {sorted(unknown_settings_keys)}")
     temperature = _number(raw_settings.get("temperature", 0.0), "settings.temperature")
     if temperature < 0:
         raise ValueError("settings.temperature must be non-negative.")
+    allow_unsafe = raw_settings.get("allow_unsafe_code_execution", False)
+    if not isinstance(allow_unsafe, bool):
+        raise ValueError("settings.allow_unsafe_code_execution must be a boolean.")
     settings = Settings(
         seed=_nonnegative_int(raw_settings.get("seed", 42), "settings.seed"),
         max_tokens=_positive_int(raw_settings.get("max_tokens", 4096), "settings.max_tokens"),
@@ -219,11 +288,16 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         code_exec_timeout=_positive_int(
             raw_settings.get("code_exec_timeout", 15), "settings.code_exec_timeout"
         ),
-        max_retries=_nonnegative_int(raw_settings.get("max_retries", 3), "settings.max_retries"),
+        max_retries=_nonnegative_int(raw_settings.get("max_retries", 0), "settings.max_retries"),
         max_concurrency=_positive_int(raw_settings.get("max_concurrency", 5), "settings.max_concurrency"),
+        max_concurrent_models=_positive_int(
+            raw_settings.get("max_concurrent_models", 4),
+            "settings.max_concurrent_models",
+        ),
         results_dir=_string(raw_settings.get("results_dir", "results"), "settings.results_dir"),
         charts_dir=_string(raw_settings.get("charts_dir", "charts"), "settings.charts_dir"),
         hf_token_env=_string(raw_settings.get("hf_token_env", "HF_TOKEN"), "settings.hf_token_env"),
+        allow_unsafe_code_execution=allow_unsafe,
     )
 
     return Config(models=models, benchmarks=benchmarks, categories=categories, settings=settings)

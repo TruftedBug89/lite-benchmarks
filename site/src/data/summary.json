@@ -1,0 +1,574 @@
+{
+  "generated_at": "2026-07-28T21:23:35.331116+00:00",
+  "run_timestamp": "2026-07-28T02:41:07.856853+00:00",
+  "seed": 42,
+  "temperature": 0.0,
+  "max_tokens": 4096,
+  "categories": [
+    {
+      "key": "coding",
+      "label": "Coding",
+      "icon": "💻",
+      "benchmarks": [
+        "bigcodebench_hard",
+        "humanevalplus",
+        "mbppplus",
+        "scicode"
+      ]
+    },
+    {
+      "key": "science",
+      "label": "Science",
+      "icon": "🔬",
+      "benchmarks": [
+        "gpqa",
+        "scibench"
+      ]
+    },
+    {
+      "key": "math",
+      "label": "Math",
+      "icon": "📐",
+      "benchmarks": [
+        "aime",
+        "math_500"
+      ]
+    },
+    {
+      "key": "knowledge",
+      "label": "Knowledge",
+      "icon": "📚",
+      "benchmarks": [
+        "mmlu_pro",
+        "supergpqa"
+      ]
+    },
+    {
+      "key": "instruction",
+      "label": "Instruction",
+      "icon": "📋",
+      "benchmarks": [
+        "ifeval",
+        "tau_bench"
+      ]
+    }
+  ],
+  "benchmarks": [
+    {
+      "key": "bigcodebench_hard",
+      "display": "BigCodeBench-Hard",
+      "category": "coding",
+      "full_dataset": "148",
+      "sampled": 50,
+      "verification": "Python unittest execution (explicit opt-in required)",
+      "source": "bigcode/bigcodebench-hard (v0.1.4)",
+      "paper": "Zhuo et al. 2024",
+      "description": "The hardest 148 practical Python programming tasks from BigCodeBench requiring deep integration of complex real-world libraries (pandas, numpy, scipy, etc.)."
+    },
+    {
+      "key": "humanevalplus",
+      "display": "HumanEval+",
+      "category": "coding",
+      "full_dataset": "164",
+      "sampled": 50,
+      "verification": "Python test execution (explicit opt-in required)",
+      "source": "evalplus/humanevalplus",
+      "paper": "Chen et al. 2021, augmented by Liu et al. 2023 (EvalPlus)",
+      "description": "164 hand-written Python functions with docstrings and rigorously expanded test cases to catch edge-case bugs and hallucinated solutions."
+    },
+    {
+      "key": "mbppplus",
+      "display": "MBPP+",
+      "category": "coding",
+      "full_dataset": "378",
+      "sampled": 50,
+      "verification": "Python test execution (explicit opt-in required)",
+      "source": "evalplus/mbppplus",
+      "paper": "Austin et al. 2021, augmented by Liu et al. 2023 (EvalPlus)",
+      "description": "378 crowd-sourced Python programming problems with heavily augmented test suites from EvalPlus for deep coverage."
+    },
+    {
+      "key": "gpqa",
+      "display": "GPQA Diamond",
+      "category": "science",
+      "full_dataset": "198",
+      "sampled": 50,
+      "verification": "Multiple choice (4 options)",
+      "source": "nichenshun/gpqa_diamond (community mirror of Idavidrein/gpqa)",
+      "paper": "Rein et al. 2023",
+      "description": "198 graduate-level questions in physics, chemistry, and biology written by domain experts. Google-proof questions where non-experts score only 34% with internet."
+    },
+    {
+      "key": "scibench",
+      "display": "SciBench",
+      "category": "science",
+      "full_dataset": "692",
+      "sampled": 50,
+      "verification": "Numerical / Formula exact match",
+      "source": "xw27/scibench",
+      "paper": "Wang et al. 2023",
+      "description": "College-level scientific textbook problem solving in physics, chemistry, and thermodynamics requiring multi-step quantitative calculations."
+    },
+    {
+      "key": "aime",
+      "display": "AIME 2024/2025",
+      "category": "math",
+      "full_dataset": "90",
+      "sampled": 50,
+      "verification": "Integer exact match (000-999)",
+      "source": "AI-MO/aimo-validation-aime",
+      "paper": "MAA AIME Competition Problems",
+      "description": "American Invitational Mathematics Examination (AIME) high-school competition math problems. Premier benchmark for evaluating advanced mathematical reasoning in SOTA AI models."
+    },
+    {
+      "key": "math_500",
+      "display": "MATH-500",
+      "category": "math",
+      "full_dataset": "500",
+      "sampled": 50,
+      "verification": "Exact match / \\boxed{} extraction",
+      "source": "HuggingFaceH4/MATH-500",
+      "paper": "Hendrycks et al. 2021 / Lightman et al. 2023",
+      "description": "500 challenging competition math problems (Levels 1 to 5) across algebra, geometry, number theory, calculus, and probability."
+    },
+    {
+      "key": "mmlu_pro",
+      "display": "MMLU-Pro",
+      "category": "knowledge",
+      "full_dataset": "12,032",
+      "sampled": 50,
+      "verification": "Multiple choice (10 options)",
+      "source": "TIGER-Lab/MMLU-Pro",
+      "paper": "Wang et al. 2024",
+      "description": "A harder successor to MMLU with 10 answer choices instead of 4, covering 14 academic disciplines (biology, business, chemistry, computer science, economics, engineering, health, history, law, math, philosophy, physics, psychology, other)."
+    },
+    {
+      "key": "ifeval",
+      "display": "IFEval",
+      "category": "instruction",
+      "full_dataset": "541",
+      "sampled": 50,
+      "verification": "25 programmatic verifiers (strict)",
+      "source": "google/IFEval",
+      "paper": "Zhou et al. 2023",
+      "description": "Tests whether models follow specific formatting and content instructions (word counts, paragraph structure, keyword inclusion/exclusion, JSON output, language constraints, etc.). Each prompt has one or more verifiable constraints checked by 25 deterministic programmatic verifiers."
+    },
+    {
+      "key": "scicode",
+      "display": "SciCode",
+      "category": "coding",
+      "full_dataset": "65",
+      "sampled": 50,
+      "verification": "Python code execution & unit test assertions",
+      "source": "SciCode1/SciCode",
+      "paper": "SciCode Team 2024",
+      "description": "Research-level scientific Python programming problems across physics, chemistry, biology, and materials science requiring multi-step numerical algorithms."
+    },
+    {
+      "key": "supergpqa",
+      "display": "SuperGPQA",
+      "category": "knowledge",
+      "full_dataset": "26,529 (7,050 hard)",
+      "sampled": 50,
+      "verification": "Multiple choice (up to 10 options)",
+      "source": "m-a-p/SuperGPQA",
+      "paper": "M-A-P Team 2025",
+      "description": "Graduate-level multiple-choice questions across 285 disciplines designed to evaluate reasoning capabilities at the frontier (hard subset)."
+    },
+    {
+      "key": "tau_bench",
+      "display": "Tau-Bench (Retail)",
+      "category": "instruction",
+      "full_dataset": "82",
+      "sampled": 50,
+      "verification": "Agentic tool-call function & argument matching",
+      "source": "amityco/tau-bench-retail-train-next-action",
+      "paper": "Sierra Research 2024",
+      "description": "Multi-turn agentic customer service workflows evaluating precise tool choice, function calling, and user dialogue trajectory control."
+    }
+  ],
+  "models": [
+    {
+      "name": "Deepseek v4 Pro Max",
+      "model_id": "deepseek/deepseek-v4-pro",
+      "provider": "DeepSeek",
+      "thinking_effort": "max",
+      "overall": 0.501,
+      "categories": {
+        "coding": 0.315,
+        "science": 0.53,
+        "math": 0.6,
+        "knowledge": 0.59,
+        "instruction": 0.47
+      },
+      "benchmarks": {
+        "bigcodebench_hard": {
+          "score": 0.22,
+          "correct": 11.0,
+          "total": 50,
+          "wilson": 11.2
+        },
+        "humanevalplus": {
+          "score": 0.98,
+          "correct": 49.0,
+          "total": 50,
+          "wilson": 5.1
+        },
+        "mbppplus": {
+          "score": 0.06,
+          "correct": 3.0,
+          "total": 50,
+          "wilson": 7.1
+        },
+        "gpqa": {
+          "score": 0.6,
+          "correct": 30.0,
+          "total": 50,
+          "wilson": 13.1
+        },
+        "scibench": {
+          "score": 0.46,
+          "correct": 23.0,
+          "total": 50,
+          "wilson": 13.3
+        },
+        "aime": {
+          "score": 0.36,
+          "correct": 18.0,
+          "total": 50,
+          "wilson": 12.9
+        },
+        "math_500": {
+          "score": 0.84,
+          "correct": 42.0,
+          "total": 50,
+          "wilson": 10.1
+        },
+        "mmlu_pro": {
+          "score": 0.78,
+          "correct": 39.0,
+          "total": 50,
+          "wilson": 11.2
+        },
+        "ifeval": {
+          "score": 0.84,
+          "correct": 42.0,
+          "total": 50,
+          "wilson": 10.1
+        },
+        "scicode": {
+          "score": 0.0,
+          "correct": 0.0,
+          "total": 50,
+          "wilson": 3.6
+        },
+        "supergpqa": {
+          "score": 0.4,
+          "correct": 20.0,
+          "total": 50,
+          "wilson": 13.1
+        },
+        "tau_bench": {
+          "score": 0.1,
+          "correct": 5.0,
+          "total": 50,
+          "wilson": 8.5
+        }
+      },
+      "completed_benchmarks": 12,
+      "tokens": {
+        "input": 273638,
+        "output": 85211,
+        "thinking": 970381,
+        "total": 1329230
+      },
+      "cost_usd": 1.0374,
+      "avg_tps": 49.9,
+      "avg_time_ms": 38282
+    },
+    {
+      "name": "Deepseek v4 Flash Max",
+      "model_id": "deepseek/deepseek-v4-flash",
+      "provider": "DeepSeek",
+      "thinking_effort": "max",
+      "overall": 0.478,
+      "categories": {
+        "coding": 0.3,
+        "science": 0.52,
+        "math": 0.55,
+        "knowledge": 0.53,
+        "instruction": 0.49
+      },
+      "benchmarks": {
+        "bigcodebench_hard": {
+          "score": 0.22,
+          "correct": 11.0,
+          "total": 50,
+          "wilson": 11.2
+        },
+        "humanevalplus": {
+          "score": 0.88,
+          "correct": 44.0,
+          "total": 50,
+          "wilson": 9.1
+        },
+        "mbppplus": {
+          "score": 0.1,
+          "correct": 5.0,
+          "total": 50,
+          "wilson": 8.5
+        },
+        "gpqa": {
+          "score": 0.56,
+          "correct": 28.0,
+          "total": 50,
+          "wilson": 13.3
+        },
+        "scibench": {
+          "score": 0.48,
+          "correct": 24.0,
+          "total": 50,
+          "wilson": 13.3
+        },
+        "aime": {
+          "score": 0.28,
+          "correct": 14.0,
+          "total": 50,
+          "wilson": 12.1
+        },
+        "math_500": {
+          "score": 0.82,
+          "correct": 41.0,
+          "total": 50,
+          "wilson": 10.5
+        },
+        "mmlu_pro": {
+          "score": 0.78,
+          "correct": 39.0,
+          "total": 50,
+          "wilson": 11.2
+        },
+        "ifeval": {
+          "score": 0.86,
+          "correct": 43.0,
+          "total": 50,
+          "wilson": 9.6
+        },
+        "scicode": {
+          "score": 0.0,
+          "correct": 0.0,
+          "total": 50,
+          "wilson": 3.6
+        },
+        "supergpqa": {
+          "score": 0.28,
+          "correct": 14.0,
+          "total": 50,
+          "wilson": 12.1
+        },
+        "tau_bench": {
+          "score": 0.12,
+          "correct": 6.0,
+          "total": 50,
+          "wilson": 9.1
+        }
+      },
+      "completed_benchmarks": 12,
+      "tokens": {
+        "input": 273638,
+        "output": 71636,
+        "thinking": 1012225,
+        "total": 1357499
+      },
+      "cost_usd": 0.341,
+      "avg_tps": 93.0,
+      "avg_time_ms": 21149
+    },
+    {
+      "name": "Deepseek v4 Flash",
+      "model_id": "deepseek/deepseek-v4-flash",
+      "provider": "DeepSeek",
+      "thinking_effort": null,
+      "overall": 0.461,
+      "categories": {
+        "coding": 0.285,
+        "science": 0.46,
+        "math": 0.55,
+        "knowledge": 0.55,
+        "instruction": 0.46
+      },
+      "benchmarks": {
+        "bigcodebench_hard": {
+          "score": 0.16,
+          "correct": 8.0,
+          "total": 50,
+          "wilson": 10.1
+        },
+        "humanevalplus": {
+          "score": 0.88,
+          "correct": 44.0,
+          "total": 50,
+          "wilson": 9.1
+        },
+        "mbppplus": {
+          "score": 0.1,
+          "correct": 5.0,
+          "total": 50,
+          "wilson": 8.5
+        },
+        "gpqa": {
+          "score": 0.52,
+          "correct": 26.0,
+          "total": 50,
+          "wilson": 13.3
+        },
+        "scibench": {
+          "score": 0.4,
+          "correct": 20.0,
+          "total": 50,
+          "wilson": 13.1
+        },
+        "aime": {
+          "score": 0.26,
+          "correct": 13.0,
+          "total": 50,
+          "wilson": 11.8
+        },
+        "math_500": {
+          "score": 0.84,
+          "correct": 42.0,
+          "total": 50,
+          "wilson": 10.1
+        },
+        "mmlu_pro": {
+          "score": 0.78,
+          "correct": 39.0,
+          "total": 50,
+          "wilson": 11.2
+        },
+        "ifeval": {
+          "score": 0.84,
+          "correct": 42.0,
+          "total": 50,
+          "wilson": 10.1
+        },
+        "scicode": {
+          "score": 0.0,
+          "correct": 0.0,
+          "total": 50,
+          "wilson": 3.6
+        },
+        "supergpqa": {
+          "score": 0.32,
+          "correct": 16.0,
+          "total": 50,
+          "wilson": 12.5
+        },
+        "tau_bench": {
+          "score": 0.08,
+          "correct": 4.0,
+          "total": 50,
+          "wilson": 7.8
+        }
+      },
+      "completed_benchmarks": 12,
+      "tokens": {
+        "input": 273638,
+        "output": 79896,
+        "thinking": 995022,
+        "total": 1348556
+      },
+      "cost_usd": 0.3344,
+      "avg_tps": 92.9,
+      "avg_time_ms": 21067
+    },
+    {
+      "name": "Gemma 4 31B",
+      "model_id": "gemini/gemma-4-31b-it",
+      "provider": "Google",
+      "thinking_effort": "high",
+      "overall": 0.2065,
+      "categories": {
+        "coding": 0.0,
+        "science": 0.4196,
+        "math": 0.2,
+        "knowledge": null,
+        "instruction": null
+      },
+      "benchmarks": {
+        "bigcodebench_hard": {
+          "score": 0.0,
+          "correct": 0.0,
+          "total": 47,
+          "wilson": 3.8
+        },
+        "gpqa": {
+          "score": 0.617,
+          "correct": 29.0,
+          "total": 47,
+          "wilson": 13.4
+        },
+        "scibench": {
+          "score": 0.2222,
+          "correct": 10.0,
+          "total": 45,
+          "wilson": 11.9
+        },
+        "aime": {
+          "score": 0.2,
+          "correct": 1.0,
+          "total": 5,
+          "wilson": 29.4
+        }
+      },
+      "completed_benchmarks": 4,
+      "tokens": {
+        "input": 30457,
+        "output": 25685,
+        "thinking": 0,
+        "total": 511427
+      },
+      "cost_usd": null,
+      "avg_tps": 7.4,
+      "avg_time_ms": 98943
+    },
+    {
+      "name": "Gemma 4 26B a4b",
+      "model_id": "gemini/gemma-4-26B-A4B-it",
+      "provider": "Google",
+      "thinking_effort": "high",
+      "overall": null,
+      "categories": {
+        "coding": null,
+        "science": null,
+        "math": null,
+        "knowledge": null,
+        "instruction": null
+      },
+      "benchmarks": {
+        "bigcodebench_hard": {
+          "score": null,
+          "correct": 0,
+          "total": 0,
+          "wilson": 0.0
+        },
+        "gpqa": {
+          "score": null,
+          "correct": 0,
+          "total": 0,
+          "wilson": 0.0
+        }
+      },
+      "completed_benchmarks": 0,
+      "tokens": {
+        "input": 0,
+        "output": 0,
+        "thinking": 0,
+        "total": 0
+      },
+      "cost_usd": null,
+      "avg_tps": null,
+      "avg_time_ms": null
+    }
+  ]
+}

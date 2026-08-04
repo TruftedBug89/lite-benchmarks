@@ -1,13 +1,104 @@
-# 🏆 Lite Benchmarks — Personal LLM Leaderboard
+<div align="center">
 
-> **Small, repeatable samples of established benchmarks with programmatic scoring.
-> No LLM-as-judge. Sampling and scoring are deterministic; model outputs may vary.**
+# 🏆 Lite Benchmarks
 
-This repo benchmarks LLMs on ~50 questions sampled from 12 established benchmarks
-grouped into 5 core categories. Results, rankings, and charts below are
-**auto-generated** after every run.
+### Personal LLM Leaderboard & Benchmark Studio
+
+[![CI](https://img.shields.io/github/actions/workflow/status/TruftedBug89/lite-benchmarks/ci.yml?branch=main&style=flat-square&logo=github&label=CI)](https://github.com/TruftedBug89/lite-benchmarks/actions)
+[![Live Site](https://img.shields.io/badge/Live_Site-lite--benchmarks.netlify.app-f0b429?style=flat-square&logo=netlify&logoColor=white)](https://lite-benchmarks.netlify.app/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![Python](https://img.shields.io/badge/Python-%E2%89%A53.10-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org)
+![Benchmarks](https://img.shields.io/badge/Benchmarks-12-green?style=flat-square)
+![Categories](https://img.shields.io/badge/Categories-5-purple?style=flat-square)
+![Models](https://img.shields.io/badge/Models_tested-5-orange?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.2.0-red?style=flat-square)
+
+*Small, repeatable samples of established benchmarks with **100% programmatic scoring**. No LLM-as-judge. Deterministic sampling. Sandboxed code execution.*
+
+</div>
+
+## 🌐 Live Leaderboard
+
+**[lite-benchmarks.netlify.app](https://lite-benchmarks.netlify.app/)** — interactive leaderboard, charts, and per-benchmark breakdowns, auto-rebuilt from this repo on every push.
+
+## ✨ Why Lite Benchmarks?
+
+<table>
+<tr>
+<td width="50%">
+
+🎯 **Programmatic Scoring**
+
+Every answer is verified by code — regex extraction, unit test execution, exact match. Zero LLM-as-judge bias.
+
+</td>
+<td width="50%">
+
+🔒 **3-Layer Sandboxed Execution**
+
+AST scan → hardened subprocess → Windows Job Object. Model code runs isolated with no API keys, no network, no escape.
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+🌐 **Web Dashboard**
+
+Select models, pick benchmarks, run, and generate reports — all from a local browser UI. No CLI wrangling.
+
+</td>
+<td width="50%">
+
+🎲 **Deterministic Sampling**
+
+Fixed seed (42) random sampling means the exact same questions every run. Reproducible by design.
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+📊 **Statistical Rigor**
+
+Wilson score confidence intervals on every benchmark score. Know exactly how much noise is in the numbers.
+
+</td>
+<td width="50%">
+
+💰 **Cost & Token Tracking**
+
+Per-model token breakdown (input/output/thinking), throughput (TPS), latency, and estimated API cost.
+
+</td>
+</tr>
+</table>
+
+## ⚡ Quick Start
+
+```bash
+pip install -e .[dev]    # install dependencies
+py web_app.py            # launch dashboard → http://127.0.0.1:8000
+```
+
+Then select models, pick benchmarks, hit **Run Benchmarks**, and **Generate Reports**.
+
+## 📑 Table of Contents
+
+- [Live Leaderboard](#-live-leaderboard)
+- [Benchmarks](#-benchmarks)
+- [Leaderboard](#-leaderboard)
+- [Charts](#-charts)
+- [Token Usage & Performance](#-token-usage--performance)
+- [Architecture](#-architecture)
+- [Methodology](#-methodology)
+- [How to Run](#-how-to-run)
+- [Adding Models](#-adding-models)
+- [Project Structure](#-project-structure)
 
 ## 📝 Benchmarks
+
+12 established benchmarks, ~50 questions each, grouped into 5 categories:
 
 | Benchmark | Category | Full Dataset | Sampled | Verification | Source |
 |-----------|----------|:-----------:|:-------:|-------------|--------|
@@ -28,8 +119,11 @@ grouped into 5 core categories. Results, rankings, and charts below are
 
 | Rank | Model | Overall | 💻 Coding | 🔬 Science | 📐 Math | 📚 Knowledge | 📋 Instruction |
 |:----:|-------|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|
-| 🥇 | **deepseek/deepseek-v4-flash** 🧠 | **59.8%** | 40.0% | 39.0% | 56.0% | 80.0% | 84.0% |
-| 🥈 | **gemini/gemini-3.1-flash-lite** 🧠 | **52.0%** | 29.5% | 51.0% | 78.0% | 60.0% | 41.3% |
+| 🥇 | **Deepseek v4 Pro Max** 🧠 | **50.1%** | 31.5% | 53.0% | 60.0% | 59.0% | 47.0% |
+| 🥈 | **Deepseek v4 Flash Max** 🧠 | **47.8%** | 30.0% | 52.0% | 55.0% | 53.0% | 49.0% |
+| 🥉 | **Deepseek v4 Flash** 🧠 | **46.1%** | 28.5% | 46.0% | 55.0% | 55.0% | 46.0% |
+| 4 | **Gemma 4 31B** 🧠 | **20.7%** | 0.0% | 42.0% | 20.0% | N/A | N/A |
+| 5 | **Gemma 4 26B a4b** 🧠 | N/A | N/A | N/A | N/A | N/A | N/A |
 
 *🧠 indicates reasoning models that utilize thinking tokens or have explicit thinking effort configured.*
 
@@ -37,8 +131,11 @@ grouped into 5 core categories. Results, rankings, and charts below are
 
 | Model | BigCodeBench-Hard | HumanEval+ | MBPP+ | GPQA Diamond | SciBench | AIME 2024/2025 | MATH-500 | MMLU-Pro | IFEval | SciCode | SuperGPQA | Tau-Bench (Retail) |
 |-------|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|
-| deepseek/deepseek-v4-flash | 20% (10/50) ±10.9pp | 90% (45/50) ±8.5pp | 10% (5/50) ±8.5pp | 58% (29/50) ±13.2pp | 20% (10/50) ±10.9pp | 24% (12/50) ±11.6pp | 88% (44/50) ±9.1pp | 80% (40/50) ±10.9pp | 84% (42/50) ±10.1pp | N/A | N/A | N/A |
-| gemini/gemini-3.1-flash-lite | 20% (10/50) ±10.9pp | 90% (45/50) ±8.5pp | 8% (4/50) ±7.8pp | 62% (31/50) ±13.0pp | 40% (20/50) ±13.1pp | 58% (29/50) ±13.2pp | 98% (49/50) ±5.1pp | 60% (30/50) ±13.1pp | 83% (38/46) ±10.8pp | 0% (0/50) ±3.6pp | N/A | 0% (0/3) ±28.1pp |
+| Deepseek v4 Pro Max | 22% (11.0/50) ±11.2pp | 98% (49.0/50) ±5.1pp | 6% (3.0/50) ±7.1pp | 60% (30.0/50) ±13.1pp | 46% (23.0/50) ±13.3pp | 36% (18.0/50) ±12.9pp | 84% (42.0/50) ±10.1pp | 78% (39.0/50) ±11.2pp | 84% (42.0/50) ±10.1pp | 0% (0.0/50) ±3.6pp | 40% (20.0/50) ±13.1pp | 10% (5.0/50) ±8.5pp |
+| Deepseek v4 Flash Max | 22% (11.0/50) ±11.2pp | 88% (44.0/50) ±9.1pp | 10% (5.0/50) ±8.5pp | 56% (28.0/50) ±13.3pp | 48% (24.0/50) ±13.3pp | 28% (14.0/50) ±12.1pp | 82% (41.0/50) ±10.5pp | 78% (39.0/50) ±11.2pp | 86% (43.0/50) ±9.6pp | 0% (0.0/50) ±3.6pp | 28% (14.0/50) ±12.1pp | 12% (6.0/50) ±9.1pp |
+| Deepseek v4 Flash | 16% (8.0/50) ±10.1pp | 88% (44.0/50) ±9.1pp | 10% (5.0/50) ±8.5pp | 52% (26.0/50) ±13.3pp | 40% (20.0/50) ±13.1pp | 26% (13.0/50) ±11.8pp | 84% (42.0/50) ±10.1pp | 78% (39.0/50) ±11.2pp | 84% (42.0/50) ±10.1pp | 0% (0.0/50) ±3.6pp | 32% (16.0/50) ±12.5pp | 8% (4.0/50) ±7.8pp |
+| Gemma 4 31B | 0% (0.0/47) ±3.8pp | N/A | N/A | 62% (29.0/47) ±13.4pp | 22% (10.0/45) ±11.9pp | 20% (1.0/5) ±29.4pp | N/A | N/A | N/A | N/A | N/A | N/A |
+| Gemma 4 26B a4b | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
 
 *±pp indicates 95% Wilson score confidence interval half-width.*
 
@@ -84,28 +181,57 @@ grouped into 5 core categories. Results, rankings, and charts below are
 
 | Model | Input | Output | Thinking | Total | Out % | Think % | Avg TPS | Avg Time | Est. Cost |
 |-------|------:|-------:|---------:|------:|------:|--------:|--------:|---------:|----------:|
-| deepseek/deepseek-v4-flash | 66,677 | 55,762 | 680,781 | 803,220 | 7% | 85% | 94.4 | 16.8s | — |
-| gemini/gemini-3.1-flash-lite | 87,458 | 186,297 | 0 | 273,755 | 68% | — | 64.2 | 5.6s | — |
+| Deepseek v4 Pro Max | 273,638 | 85,211 | 970,381 | 1,329,230 | 6% | 73% | 49.9 | 38.3s | $1.0374 |
+| Deepseek v4 Flash Max | 273,638 | 71,636 | 1,012,225 | 1,357,499 | 5% | 75% | 93.0 | 21.1s | $0.3410 |
+| Deepseek v4 Flash | 273,638 | 79,896 | 995,022 | 1,348,556 | 6% | 74% | 92.9 | 21.1s | $0.3344 |
+| Gemma 4 31B | 30,457 | 25,685 | 0 | 511,427 | 5% | — | 7.4 | 98.9s | — |
+| Gemma 4 26B a4b | 0 | 0 | 0 | 0 | — | — | — | — | — |
 
 *TPS = output tokens/second (cloud APIs only, skipped for local models). Est. Cost calculated via LiteLLM cost tables.*
 
+## 🏗️ Architecture
+
+```mermaid
+flowchart LR
+    A[config.yaml] --> B[datasets.py<br/>HF sampling]
+    B --> C[engine.py<br/>concurrent execution]
+    C --> D[providers.py<br/>litellm calls]
+    D --> E[benchmarks.py<br/>scoring & verification]
+    E --> F[results_store.py<br/>schema v2 JSON]
+    F --> G[charts.py<br/>matplotlib PNGs]
+    F --> H[readme_gen.py<br/>this README]
+
+    C --> I[sandbox.py<br/>3-layer isolation]
+    I --> E
+```
+
 ## 🔬 Methodology
 
-### Sampling & Statistical Significance
+<details>
+<summary><strong>📐 Sampling & Statistical Significance</strong></summary>
+
 - **~50 questions** are sampled from each benchmark's full dataset
 - Sampling uses a **fixed seed (42)** via random sampling so exact questions are stable across runs
 - Samples of n=50 have 95% confidence intervals of roughly ±7–14pp; treat small ranking gaps as noise
 - **Scoring v2 Notice**: Sampling and scoring strictness updated in v0.2.0; results are not directly comparable with pre-v0.2.0 runs
 
-### Scoring
+</details>
+
+<details>
+<summary><strong>✅ Scoring & Verification</strong></summary>
+
 - **All scoring is programmatic** — no LLM-as-judge is used anywhere
-- Code benchmarks are skipped unless unsafe code execution is enabled in an isolated sandbox
+- Code benchmarks require explicit opt-in (``allow_unsafe_code_execution``) and run in a layered sandbox: an AST scan of generated code rejects destructive / escape constructs, the child runs with a scrubbed environment (no API keys, temp working dir, no OS/network/process access), and on Windows it is additionally confined by a Job Object that blocks grandchild processes and UI access. The opt-in gate is enforced at the sandbox layer, so it fails closed even for direct callers.
 - Multiple-choice benchmarks extract the answer letter and compare to ground truth
-- Math benchmarks extract boxed/numerical answers and evaluate symbolically or numerically
+- Math benchmarks extract boxed/numerical answers and evaluate via normalized string or numerical comparison
 - IFEval uses its 25 strict programmatic verifiers (word count, format, keywords, etc.)
 - Tau-Bench verifies tool function name AND argument dictionary match
 
-### Category & Overall Scores
+</details>
+
+<details>
+<summary><strong>📊 Category & Overall Scores</strong></summary>
+
 - **Category score** = average of its benchmark scores
   - 💻 **Coding** = avg(BigCodeBench-Hard, HumanEval+, MBPP+, SciCode)
   - 🔬 **Science** = avg(GPQA Diamond, SciBench)
@@ -115,11 +241,17 @@ grouped into 5 core categories. Results, rankings, and charts below are
 - **Overall score** = average of completed category scores (equal weight per category)
 - Provider failures are excluded and recorded separately; scorer exceptions score 0.0 without retrying provider
 
-### Inference Settings
+</details>
+
+<details>
+<summary><strong>⚙️ Inference Settings</strong></summary>
+
 - `temperature`: 0.0
 - `max_tokens`: 4096
 - `timeout`: 300s per request
-- `retries`: up to 3 retries with exponential backoff and jitter
+- `retries`: transient errors retry with exponential backoff until a good response arrives (no cap); permanent errors (context length, content filter) are never retried
+
+</details>
 
 ## 🚀 How to Run
 
@@ -177,6 +309,7 @@ models:
 ```
 ├── config.yaml              # Models, benchmarks, categories, settings
 ├── web_app.py               # Web dashboard server
+├── windows_sandbox.py       # Windows Job-object/restricted-token sandbox
 ├── README.md                # ← this file (auto-generated)
 ├── web/                     # Web dashboard frontend (HTML/CSS/JS)
 ├── lite_bench/
@@ -188,6 +321,7 @@ models:
 │   ├── datasets.py          # Deterministic HuggingFace sampling
 │   ├── benchmarks.py        # Benchmark implementations & verifiers
 │   ├── ifeval_verifiers.py  # 25 strict IFEval verifiers
+│   ├── sandbox.py           # Code-exec sandbox (AST scan + subprocess + Win job)
 │   ├── charts.py            # matplotlib chart generation
 │   └── readme_gen.py        # README generator
 ├── results/                 # JSON results per run
@@ -197,4 +331,10 @@ models:
 
 ---
 
-*Auto-generated by [lite-benchmarks](.) on 2026-07-23 17:22 UTC. Use the Web Dashboard to update.*
+<div align="center">
+
+*Auto-generated by [lite-benchmarks](.) on 2026-07-28 21:24 UTC · Licensed under [MIT](LICENSE) · Built with [litellm](https://github.com/BerriAI/litellm) + [HuggingFace Datasets](https://github.com/huggingface/datasets)*
+
+**⭐ Star this repo if you find it useful!**
+
+</div>

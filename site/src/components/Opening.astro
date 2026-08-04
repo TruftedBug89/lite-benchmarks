@@ -1,0 +1,65 @@
+---
+import { fmtDate, pct, summary } from "../lib/data";
+
+const nModels = summary.models.length;
+const nBench = summary.benchmarks.length;
+const nQuestions = summary.benchmarks.reduce((a, b) => a + b.sampled, 0);
+const champ = summary.models.find((m) => m.overall != null);
+
+const stats = [
+  { label: "Models tested", value: String(nModels), count: nModels, int: true },
+  { label: "Benchmarks", value: String(nBench), count: nBench, int: true },
+  { label: "Questions sampled", value: String(nQuestions), count: nQuestions, int: true },
+  { label: "Sampling seed", value: String(summary.seed), count: summary.seed, int: true },
+];
+---
+
+<section id="top" class="scanlines relative overflow-hidden border-b border-edge">
+  <div class="grid-bg absolute inset-0" aria-hidden="true"></div>
+  <div class="absolute -top-24 left-[12%] h-72 w-72 rounded-full bg-[var(--glow-1)] blur-[110px]" aria-hidden="true"></div>
+  <div class="absolute -top-10 right-[8%] h-80 w-80 rounded-full bg-[var(--glow-2)] blur-[120px]" aria-hidden="true"></div>
+
+  <div class="relative mx-auto max-w-6xl px-4 pb-14 pt-16 sm:px-6 sm:pb-16 sm:pt-24">
+    <div class="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 font-mono text-[11px] tracking-[0.2em] text-accent">
+      <span class="size-1.5 rounded-full bg-accent animate-pulse"></span>
+      PROGRAMMATIC LLM EVALUATION · NO LLM-AS-JUDGE
+    </div>
+
+    <h1 class="mt-5 max-w-3xl font-display text-4xl font-bold leading-[1.04] tracking-tight sm:text-6xl">
+      The leaderboard built on <span class="bg-gradient-to-r from-accent to-accent-2 bg-clip-text text-transparent">verifiable</span> scores.
+    </h1>
+
+    <p class="mt-6 max-w-2xl text-[15px] leading-relaxed text-muted sm:text-base">
+      {nBench} established benchmarks, ~50 questions each, sampled with a fixed seed and scored
+      entirely by code — regex extraction, exact match, and sandboxed test execution.
+      Every number on this page is reproducible.
+    </p>
+
+    <dl class="reveal mt-12 grid grid-cols-2 gap-4 border-t border-edge pt-8 sm:grid-cols-3 lg:grid-cols-6">
+      {stats.map((s) => (
+        <div class="glass-card rounded-xl p-4 transition-transform hover:-translate-y-1">
+          <dd class="font-display text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">
+            <span data-count-to={s.count} data-format={s.int ? "int" : "dec"}>{s.int ? s.count.toLocaleString("en-US") : s.count}</span>
+          </dd>
+          <dt class="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-muted">{s.label}</dt>
+        </div>
+      ))}
+
+      <div class="glass-card rounded-xl p-4 transition-transform hover:-translate-y-1 border-accent/30 bg-accent/5">
+        <dd class="flex items-center gap-1.5 font-display text-2xl font-semibold tracking-tight sm:text-3xl text-accent">
+          <span>🏆</span>
+          <span>{champ ? pct(champ.overall) : "—"}</span>
+        </dd>
+        <dt class="mt-1 truncate font-mono text-[10px] uppercase tracking-[0.16em] text-muted" title={champ?.name}>
+          Top · {champ?.name ?? "no runs yet"}
+        </dt>
+      </div>
+
+      <div class="glass-card rounded-xl p-4 transition-transform hover:-translate-y-1">
+        <dd class="font-mono text-base font-semibold leading-7 text-fg sm:text-lg">{fmtDate(summary.run_timestamp)}</dd>
+        <dt class="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-muted">Last run (UTC)</dt>
+      </div>
+    </dl>
+  </div>
+</section>
+

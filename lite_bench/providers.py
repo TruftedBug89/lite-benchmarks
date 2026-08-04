@@ -23,12 +23,94 @@ from .config import ModelConfig, Settings
 console = Console()
 
 litellm.suppress_debug_info = True
+# Many models reject parameters they don't support (e.g. reasoning models reject
+# `temperature`/`max_tokens`). Rather than raising, let litellm drop unsupported
+# params so a single incompatible field doesn't zero out an entire model's run.
+litellm.drop_params = True
 
 # LiteLLM response objects trigger noisy Pydantic v2 serializer warnings
 # (optional fields not always populated). Harmless — silence them.
 warnings.filterwarnings("ignore", message="Pydantic serializer warnings")
 
 LOCAL_PREFIXES = ("lm_studio/", "ollama/")
+
+# Remember which (model, env-var) pairs we've already warned about so the
+# "api_key_env not set" notice prints once, not once per question.
+_warned_missing_keys: set[tuple[str, str]] = set()
+
+_PARAM_ERROR_HINTS = (
+    "unsupported",
+    "unexpected keyword",
+    "not supported",
+    "invalid parameter",
+    "unrecognized",
+    "unknown parameter",
+    "invalid_request_error",
+)
+
+
+def _completion_with_fallback(kwargs: dict[str, Any]) -> Any:
+    """Call litellm.completion, retrying once after dropping/translating the
+    specific parameter a model rejected.
+
+    ``litellm.drop_params`` handles most incompatibilities up front; this is a
+    targeted backstop that only fires when the error actually names a parameter,
+    and says *which* parameter was dropped (the old code blindly stripped
+    ``reasoning_effort`` on any "not supported" error, silently disabling
+    thinking for reasoning models)."""
+    api_key = kwargs.get("api_key")
+
+    def _sanitize(exc: Exception) -> Exception:
+        if not api_key:
+            return exc
+        err_str = str(exc)
+        if api_key in err_str:
+            safe_str = err_str.replace(api_key, "***")
+            try:
+                new_exc = type(exc)(safe_str)
+                new_exc.__traceback__ = exc.__traceback__
+                return new_exc
+            except Exception:
+                new_exc = RuntimeError(safe_str)
+                new_exc.__traceback__ = exc.__traceback__
+                return new_exc
+        return exc
+
+    try:
+        return litellm.completion(**kwargs)
+    except Exception as e:
+        msg = str(e).lower()
+        if not any(hint in msg for hint in _PARAM_ERROR_HINTS):
+            raise _sanitize(e) from None
+
+        dropped: list[str] = []
+        if "reasoning_effort" in kwargs and ("reasoning" in msg or "reasoning_effort" in msg):
+            kwargs.pop("reasoning_effort", None)
+            dropped.append("reasoning_effort")
+        if "temperature" in kwargs and "temperature" in msg:
+            kwargs.pop("temperature", None)
+            dropped.append("temperature")
+        if "max_tokens" in kwargs and ("max_tokens" in msg or "max_completion_tokens" in msg):
+            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
+            dropped.append("max_tokens->max_completion_tokens")
+        if not dropped:
+            # The error looks parameter-related but names nothing we recognize;
+            # shed the most-likely-optional field rather than fail the question.
+            if "reasoning_effort" in kwargs:
+                kwargs.pop("reasoning_effort", None)
+                dropped.append("reasoning_effort")
+            elif "temperature" in kwargs:
+                kwargs.pop("temperature", None)
+                dropped.append("temperature")
+        if not dropped:
+            raise _sanitize(e) from None
+        console.print(
+            f"[dim]Model {kwargs.get('model')} rejected a parameter; retrying without {', '.join(dropped)}.[/dim]"
+        )
+        try:
+            return litellm.completion(**kwargs)
+        except Exception as e2:
+            raise _sanitize(e2) from None
 
 
 @dataclass
@@ -41,6 +123,11 @@ class GenerationResult:
     total_time_ms: float | None = None  # None for local models
     tokens_per_second: float | None = None  # None for local models
     cost_usd: float | None = None
+    finish_reason: str | None = None
+
+    @property
+    def is_truncated(self) -> bool:
+        return self.finish_reason == "length"
 
     @property
     def output_ratio(self) -> float:
@@ -62,6 +149,8 @@ class GenerationResult:
             "total_tokens": self.total_tokens,
             "output_ratio": round(self.output_ratio, 4),
         }
+        if self.finish_reason:
+            d["finish_reason"] = self.finish_reason
         if self.total_time_ms is not None:
             d["total_time_ms"] = round(self.total_time_ms, 1)
         if self.tokens_per_second is not None:
@@ -93,11 +182,15 @@ def generate(model: ModelConfig | str, prompt: str, settings: Settings) -> Gener
         thinking_effort = model.thinking_effort
         max_tokens = model.max_tokens or settings.max_tokens
         extra_params = model.extra_params
+        api_base = model.api_base
+        api_key_env = model.api_key_env
     else:
         model_id = model
         thinking_effort = None
         max_tokens = settings.max_tokens
         extra_params = {}
+        api_base = None
+        api_key_env = None
 
     local = _is_local(model_id)
 
@@ -112,21 +205,25 @@ def generate(model: ModelConfig | str, prompt: str, settings: Settings) -> Gener
 
     if thinking_effort:
         kwargs["reasoning_effort"] = _map_reasoning_effort(thinking_effort)
+    if api_base:
+        kwargs["api_base"] = api_base
+    if api_key_env:
+        import os as _os
+
+        resolved_key = _os.environ.get(api_key_env)
+        if resolved_key:
+            kwargs["api_key"] = resolved_key
+        elif (model_id, api_key_env) not in _warned_missing_keys:
+            _warned_missing_keys.add((model_id, api_key_env))
+            console.print(
+                f"[yellow]Warning: env var {api_key_env!r} for {model_id} is not set; "
+                f"falling back to litellm's default key lookup.[/yellow]"
+            )
     if extra_params:
         kwargs.update(extra_params)
 
     start = time.perf_counter()
-    try:
-        response = litellm.completion(**kwargs)
-    except Exception as e:
-        if "reasoning_effort" in kwargs and any(
-            msg in str(e).lower()
-            for msg in ("unsupported", "unexpected keyword", "not supported", "invalid parameter")
-        ):
-            kwargs.pop("reasoning_effort", None)
-            response = litellm.completion(**kwargs)
-        else:
-            raise
+    response = _completion_with_fallback(kwargs)
 
     elapsed_ms = (time.perf_counter() - start) * 1000
 
@@ -135,7 +232,13 @@ def generate(model: ModelConfig | str, prompt: str, settings: Settings) -> Gener
     completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
     details = getattr(usage, "completion_tokens_details", None)
     thinking_tokens = int(getattr(details, "reasoning_tokens", 0) or 0)
-    output_tokens = max(0, completion_tokens - thinking_tokens)
+    # OpenAI-style usage folds reasoning into completion_tokens (subtract it);
+    # providers that report reasoning *separately* would otherwise be clamped to
+    # 0, so when thinking >= completion we treat completion as the visible output.
+    if thinking_tokens and thinking_tokens <= completion_tokens:
+        output_tokens = completion_tokens - thinking_tokens
+    else:
+        output_tokens = completion_tokens
     total_tokens = int(getattr(usage, "total_tokens", 0) or (input_tokens + completion_tokens))
 
     # Speed metrics — skip for local models (hardware-dependent)
@@ -157,9 +260,17 @@ def generate(model: ModelConfig | str, prompt: str, settings: Settings) -> Gener
     choices = getattr(response, "choices", None)
     if not choices:
         raise RuntimeError("The provider returned no completion choices.")
-    content = getattr(getattr(choices[0], "message", None), "content", None)
+    choice = choices[0]
+    content = getattr(getattr(choice, "message", None), "content", None)
     if not isinstance(content, str):
         raise RuntimeError("The provider returned a completion without text content.")
+
+    finish_reason = getattr(choice, "finish_reason", None)
+    if isinstance(finish_reason, str):
+        finish_reason = finish_reason.lower()
+
+    if content.strip() == "" and finish_reason != "length":
+        raise RuntimeError("The provider returned an empty completion.")
 
     return GenerationResult(
         text=content,
@@ -170,4 +281,5 @@ def generate(model: ModelConfig | str, prompt: str, settings: Settings) -> Gener
         total_time_ms=time_ms,
         tokens_per_second=tps,
         cost_usd=cost_usd,
+        finish_reason=finish_reason,
     )

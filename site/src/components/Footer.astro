@@ -1,0 +1,39 @@
+---
+import { fmtDate, summary } from "../lib/data";
+---
+
+<footer class="relative border-t border-edge bg-panel-2/20">
+  <div class="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-10 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+    <div class="flex items-center gap-2">
+      <span class="size-2 rounded-full bg-emerald-500 status-pulse" title="Live snapshot data active"></span>
+      <p class="font-mono text-[11px] leading-relaxed text-muted">
+        Auto-generated from <span class="text-fg font-medium">results/latest.json</span> · snapshot {fmtDate(summary.generated_at)}
+        <span class="hidden sm:inline"> · </span>
+        seed {summary.seed} · MIT licensed
+      </p>
+    </div>
+    <div class="flex items-center gap-5 font-mono text-[11px]">
+      <a href="https://github.com/TruftedBug89/lite-benchmarks" target="_blank" rel="noopener" class="text-muted transition-colors hover:text-fg">
+        GitHub ↗
+      </a>
+      <span class="text-muted">
+        built with <a href="https://github.com/BerriAI/litellm" target="_blank" rel="noopener" class="underline-offset-2 hover:underline">litellm</a>
+        + <a href="https://github.com/huggingface/datasets" target="_blank" rel="noopener" class="underline-offset-2 hover:underline">🤗 datasets</a>
+      </span>
+    </div>
+  </div>
+
+  <!-- Floating Back to Top Button -->
+  <button
+    id="back-to-top"
+    type="button"
+    aria-label="Back to top"
+    title="Scroll back to top"
+    class="fixed bottom-6 right-6 z-40 grid size-10 place-items-center rounded-full border border-edge bg-panel/90 text-muted backdrop-blur-md shadow-lg opacity-0 pointer-events-none transition-all hover:border-accent hover:text-accent"
+  >
+    <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="18 15 12 9 6 15"></polyline>
+    </svg>
+  </button>
+</footer>
+

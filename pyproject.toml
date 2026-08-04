@@ -16,6 +16,7 @@ dependencies = [
   "PyYAML>=6,<7",
   "rich>=13,<14",
   "langdetect>=1.0.9,<2",
+  "python-dotenv>=1.0,<2",
 ]
 
 [project.optional-dependencies]
