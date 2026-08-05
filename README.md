@@ -17,6 +17,11 @@
 
 </div>
 
+> [!NOTE]
+> **Project Status:** 🟢 **Working / Functional**  
+> *This status must not be changed by AI unless explicitly instructed by the repository owner.*
+
+
 ## 🌐 Live Leaderboard
 
 **[lite-benchmarks.netlify.app](https://lite-benchmarks.netlify.app/)** — interactive leaderboard, charts, and per-benchmark breakdowns, auto-rebuilt from this repo on every push.
