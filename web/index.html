@@ -1257,7 +1257,7 @@
         return `
           <div style="background:rgba(15,23,42,0.8); border:1px solid var(--border-color); border-radius:10px; padding:0.85rem; display:flex; flex-direction:column; gap:0.5rem;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
-              <strong>Q#${q.index} ${q.benchmark ? '[' + escapeHtml(q.benchmark) + ']' : ''}</strong>
+              <strong>Q#${q.index != null ? q.index : q.question_id} ${q.benchmark ? '[' + escapeHtml(q.benchmark) + ']' : ''}</strong>
               <div style="display:flex; gap:0.5rem; align-items:center;">
                 ${statusBadge}
                 <span style="font-weight:700; color:${isPass ? 'var(--accent-green)' : 'var(--accent-rose)'}; background:rgba(255,255,255,0.05); padding:0.2rem 0.5rem; border-radius:6px;">🌟 Points: ${q.score} / 1.0</span>

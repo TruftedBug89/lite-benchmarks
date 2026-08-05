@@ -20,6 +20,7 @@ import re
 import sys
 import threading
 import time
+import traceback
 import webbrowser
 from dataclasses import asdict, dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -27,13 +28,17 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from lite_bench import logging_utils
 from lite_bench.charts import generate_all as generate_charts
 from lite_bench.config import Config, ModelConfig, Settings, load_config
 from lite_bench.engine import DefaultEngineCallbacks, run_engine
+from lite_bench.logging_utils import get_logger, log_ref, open_run_log, scrub
 from lite_bench.metadata import BENCHMARK_INFO, CATEGORY_ICONS, CATEGORY_LABELS
 from lite_bench.readme_gen import write_readme
 from lite_bench.results_store import append_run_history, load_latest_results, load_run_history
 from refresh_site import refresh_site
+
+log = get_logger("web")
 
 ROOT_DIR = Path(__file__).parent.resolve()
 WEB_DIR = ROOT_DIR / "web"
@@ -341,10 +346,11 @@ class DashboardEngine:
 
         Entries are single-line and capped — provider exceptions can be
         multi-KB dumps that would flood the web log and SSE frames. The full
-        error text is still available in results/latest.json and the card
-        tooltips."""
+        error text is still available in results/latest.json, the card
+        tooltips, and the per-run detail log in ``logs/``."""
         ts = time.strftime("%H:%M:%S")
         msg = str(msg).replace("\n", " ")
+        log.info(f"ui: {scrub(msg)}")
         if len(msg) > 800:
             msg = msg[:800] + "…"
         entry = f"[{ts}] {msg}"
@@ -371,6 +377,7 @@ class DashboardEngine:
             self._stop_event.set()
             self.stop_requested = True
             self._log_locked("⛔ Force stop — cancelling all queued work immediately.")
+            log.warning("Force stop requested — cancelling queued work")
             self.is_running = False
             self.finish_time = time.time()
             for st in self.states.values():
@@ -398,6 +405,12 @@ class DashboardEngine:
         self.results = {}
         self.logs = []
         self.log("🚀 Initializing benchmark run...")
+
+        # Per-run detail log: everything lands here (DEBUG+); the UI log and
+        # console stay short and point back at this file.
+        run_log_path = open_run_log(f"r{run_id}")
+        log.info(f"Run #{run_id} started — detail log: {run_log_path}")
+        self.log(f"📝 Detail log: {run_log_path}{log_ref()}")
 
         # Server-side model registry. The client may only *select* models that
         # already exist in config.yaml or custom_models.json; ``api_base`` and
@@ -500,6 +513,31 @@ class DashboardEngine:
             settings=settings,
         )
 
+        log.info(
+            f"Run #{run_id} config: {len(models)} models × {len(benchmarks)} benchmarks "
+            f"(max_concurrency={settings.max_concurrency}, "
+            f"max_concurrent_models={settings.max_concurrent_models})"
+        )
+        for m in models:
+            log.debug(
+                f"Run #{run_id} model: id={m.id!r} name={m.name!r} "
+                f"thinking_effort={m.thinking_effort} max_tokens={m.max_tokens} "
+                f"api_base={m.api_base} api_key_env={m.api_key_env}"
+            )
+        for bk, bv in benchmarks.items():
+            log.debug(
+                f"Run #{run_id} benchmark: {bk} dataset={bv.dataset} "
+                f"split={bv.split} subset={bv.subset} revision={bv.revision} "
+                f"num_samples={bv.num_samples}"
+            )
+        log.debug(
+            f"Run #{run_id} settings: seed={settings.seed} "
+            f"temperature={settings.temperature} max_tokens={settings.max_tokens} "
+            f"request_timeout={settings.request_timeout} "
+            f"code_exec_timeout={settings.code_exec_timeout} "
+            f"max_retries={settings.max_retries} allow_unsafe={allow_unsafe}"
+        )
+
         with self.state_lock:
             for m in models:
                 self.states[m.name] = LiveModelState(
@@ -526,8 +564,20 @@ class DashboardEngine:
                     if self._run_id == run_id:
                         if stop_event.is_set():
                             self._log_locked("⛔ Benchmark run force-stopped.")
+                            log.info(f"Run #{run_id} force-stopped")
                         else:
                             self._log_locked("✅ Benchmark run finished.")
+                            for mname, mdata in self.results.items():
+                                if not isinstance(mdata, dict):
+                                    continue
+                                sm = mdata.get("summary") if isinstance(mdata.get("summary"), dict) else {}
+                                log.info(
+                                    f"Run #{run_id} result: model={mname!r} "
+                                    f"overall={sm.get('overall_score')} "
+                                    f"completed={sm.get('completed_benchmarks')} "
+                                    f"tokens={sm.get('total_tokens')}"
+                                )
+                            log.info(f"Run #{run_id} finished (results in results/latest.json)")
                             try:
                                 append_run_history(
                                     self.results,
@@ -538,6 +588,9 @@ class DashboardEngine:
                             except Exception as hist_err:
                                 self._log_locked(f"⚠️ Failed to save run history: {hist_err}")
             except Exception as e:
+                err_tb = _scrub_secrets(traceback.format_exc())
+                log.error(f"Run #{run_id} failed: {_scrub_secrets(str(e))}")
+                log.debug(f"Run #{run_id} traceback:\n{err_tb}")
                 self.log(f"❌ Error during benchmark execution: {e}")
                 with self.state_lock:
                     if self._run_id == run_id:
@@ -702,18 +755,40 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     latest = load_latest_results(config, _latest_results_path(config))
                     mdata = latest.get(model_name, {})
                     if bench_name and bench_name in mdata:
-                        questions_list = mdata[bench_name].get("details", [])
+                        candidates = {bench_name: mdata[bench_name]}
                     elif not bench_name:
-                        for _bk, bv in mdata.items():
-                            if isinstance(bv, dict) and "details" in bv:
-                                questions_list.extend(bv["details"])
+                        candidates = {
+                            k: v for k, v in mdata.items()
+                            if isinstance(v, dict) and "details" in v
+                        }
+                    else:
+                        candidates = {}
+                    for _bk, bv in candidates.items():
+                        details = bv.get("details", []) if isinstance(bv, dict) else []
+                        for d in details:
+                            if not isinstance(d, dict):
+                                continue
+                            entry = dict(d)
+                            # Persisted details lack the live-state keys the
+                            # visualizer reads (index/benchmark/response_text/
+                            # time_ms/tps); normalize so deep links and the
+                            # bench dropdown work on saved results too.
+                            entry.setdefault("benchmark", _bk)
+                            if "index" not in entry and "question_id" in entry:
+                                entry["index"] = entry["question_id"]
+                            if "response_text" not in entry and "response" in entry:
+                                entry["response_text"] = entry["response"]
+                            if "time_ms" not in entry and "total_time_ms" in entry:
+                                entry["time_ms"] = entry["total_time_ms"]
+                            if "tps" not in entry and "tokens_per_second" in entry:
+                                entry["tps"] = entry["tokens_per_second"]
+                            questions_list.append(entry)
                 except Exception:
                     pass
 
             if bench_name:
                 questions_list = [
-                    q for q in questions_list
-                    if q.get("benchmark") == bench_name or not q.get("benchmark")
+                    q for q in questions_list if q.get("benchmark") == bench_name
                 ]
 
             self._send_json({"model": model_name, "benchmark": bench_name, "questions": questions_list})
@@ -916,7 +991,9 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 return
 
             self.send_error(404, "Not Found")
-        except Exception:
+        except Exception as e:
+            log.error(f"HTTP POST failed ({path}): {_scrub_secrets(str(e))}")
+            log.debug(f"HTTP POST traceback ({path}):\n{_scrub_secrets(traceback.format_exc())}")
             self._send_json({"error": "Internal server error"}, status=500)
 
 
@@ -945,7 +1022,11 @@ def main() -> None:
     # 0.0.0.0/:: are not navigable addresses in a browser; open loopback instead.
     browser_host = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
     url = f"http://{browser_host}:{args.port}/"
+    server_log = open_run_log("server")
+    log.info(f"Web server starting on {url}")
     print(f"✨ Lite Benchmarks Web Dashboard running at: {url}")
+    print(f"📝 Server log: {server_log}{log_ref()}")
+    print(f"   (each benchmark run gets its own file in {logging_utils.LOG_DIR})")
 
     if not args.no_browser:
         threading.Thread(target=lambda: (time.sleep(0.5), webbrowser.open(url)), daemon=True).start()

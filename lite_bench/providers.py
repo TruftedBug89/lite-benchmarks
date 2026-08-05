@@ -19,8 +19,10 @@ import litellm
 from rich.console import Console
 
 from .config import ModelConfig, Settings
+from .logging_utils import get_logger
 
 console = Console()
+log = get_logger("providers")
 
 litellm.suppress_debug_info = True
 # Many models reject parameters they don't support (e.g. reasoning models reject
@@ -106,6 +108,10 @@ def _completion_with_fallback(kwargs: dict[str, Any]) -> Any:
             raise _sanitize(e) from None
         console.print(
             f"[dim]Model {kwargs.get('model')} rejected a parameter; retrying without {', '.join(dropped)}.[/dim]"
+        )
+        log.info(
+            f"Model {kwargs.get('model')} rejected parameter(s) "
+            f"{', '.join(dropped)}; retrying without them"
         )
         try:
             return litellm.completion(**kwargs)
@@ -219,6 +225,10 @@ def generate(model: ModelConfig | str, prompt: str, settings: Settings) -> Gener
                 f"[yellow]Warning: env var {api_key_env!r} for {model_id} is not set; "
                 f"falling back to litellm's default key lookup.[/yellow]"
             )
+            log.warning(
+                f"api_key_env {api_key_env!r} for {model_id} is not set; "
+                f"falling back to litellm's default key lookup"
+            )
     if extra_params:
         kwargs.update(extra_params)
 
@@ -226,6 +236,10 @@ def generate(model: ModelConfig | str, prompt: str, settings: Settings) -> Gener
     response = _completion_with_fallback(kwargs)
 
     elapsed_ms = (time.perf_counter() - start) * 1000
+    log.debug(
+        f"generate OK model={model_id} prompt_len={len(prompt)} chars "
+        f"elapsed={elapsed_ms:.0f}ms"
+    )
 
     usage = getattr(response, "usage", None)
     input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
@@ -272,6 +286,11 @@ def generate(model: ModelConfig | str, prompt: str, settings: Settings) -> Gener
     if content.strip() == "" and finish_reason != "length":
         raise RuntimeError("The provider returned an empty completion.")
 
+    log.debug(
+        f"generate telemetry model={model_id} in={input_tokens} out={output_tokens} "
+        f"think={thinking_tokens} total={total_tokens} time={time_ms}ms "
+        f"tps={tps} cost={cost_usd} finish={finish_reason}"
+    )
     return GenerationResult(
         text=content,
         input_tokens=input_tokens,

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import sys
 import tempfile
 import threading
 import time
-import math
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,8 +18,10 @@ import litellm
 from rich.console import Console
 
 from .config import Config
+from .logging_utils import get_logger
 
 console = Console()
+log = get_logger("results_store")
 
 _history_lock = threading.Lock()
 
@@ -335,15 +337,18 @@ def load_latest_results(config: Config, path: str | Path = "results/latest.json"
         data = json.loads(p.read_text(encoding="utf-8"))
     except Exception as e:
         console.print(f"[yellow]Warning: Failed to parse {path}: {e}[/yellow]")
+        log.warning(f"Failed to parse results file {path}: {e}")
         return {}
 
     if not isinstance(data, dict):
         console.print(f"[yellow]Warning: {path} is not a results object; ignoring it.[/yellow]")
+        log.warning(f"Results file {path} is not a results object; ignoring it")
         return {}
 
     sv = data.get("schema_version")
     if sv != SCHEMA_VERSION:
         console.print(f"[dim]Note: {path} schema_version is {sv} (current is {SCHEMA_VERSION}).[/dim]")
+        log.info(f"Results file {path} schema_version is {sv} (current is {SCHEMA_VERSION})")
 
     models = data.get("models", {})
     if not isinstance(models, dict):
@@ -363,6 +368,7 @@ def load_latest_results(config: Config, path: str | Path = "results/latest.json"
                 cleaned_mdata[k] = v
             else:
                 console.print(f"[dim]Dropping stale benchmark key {k!r} from model {mname!r}[/dim]")
+                log.info(f"Dropping stale benchmark key {k!r} from model {mname!r}")
         
         # Re-aggregate
         aggregate(cleaned_mdata, config)

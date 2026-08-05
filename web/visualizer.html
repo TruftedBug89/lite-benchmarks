@@ -245,7 +245,7 @@
       }
       if (targetQ != null) {
         const idx = parseInt(targetQ, 10);
-        const match = filteredQuestions.findIndex(q => q.index === idx);
+        const match = filteredQuestions.findIndex(q => q.index === idx || q.question_id === idx);
         if (match !== -1) selectQuestion(match);
       }
     } catch (e) {
@@ -323,7 +323,7 @@
       return `
         <div class="q-item ${activeClass}" onclick="selectQuestion(${idx})">
           <div class="q-top">
-            <span class="q-title">Q#${q.index} ${q.benchmark ? '[' + escapeHtml(q.benchmark) + ']' : ''}</span>
+            <span class="q-title">Q#${q.index != null ? q.index : q.question_id} ${q.benchmark ? '[' + escapeHtml(q.benchmark) + ']' : ''}</span>
             <span class="score-badge ${badgeClass}">${badgeText}</span>
           </div>
           <div class="q-snippet">${escapeHtml(q.prompt || 'No prompt text')}</div>
@@ -346,7 +346,7 @@
     main.innerHTML = `
       <div class="detail-card">
         <div class="card-title">
-          <span>🎯 Question #${q.index} ${q.benchmark ? '— ' + escapeHtml(q.benchmark) : ''}</span>
+          <span>🎯 Question #${q.index != null ? q.index : q.question_id} ${q.benchmark ? '— ' + escapeHtml(q.benchmark) : ''}</span>
           ${pointsBadge}
         </div>
         <div class="meta-strip">

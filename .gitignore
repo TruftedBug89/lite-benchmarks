@@ -18,6 +18,7 @@ results/results_*.json
 results/latest.json
 results/archive/
 custom_models.json
+logs/
 
 # Generated charts & sandbox scratch — regenerated on demand, never tracked.
 charts/*.png

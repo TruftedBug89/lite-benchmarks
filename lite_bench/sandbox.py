@@ -45,6 +45,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
+
+from .logging_utils import get_logger
+
+log = get_logger("sandbox")
 
 # Source of the in-child confinement shim, prepended to every sandboxed script.
 # Loaded once at import time so the child never has to read it from disk. The
@@ -348,6 +353,10 @@ def execute_sandboxed(
 
     violations = scan_code(untrusted_code)
     if violations:
+        log.debug(
+            f"sandbox: rejected {len(violations)} violation(s): "
+            f"{'; '.join(violations[:5])}"
+        )
         return False, violations
 
     if not trusted_code.strip():
@@ -366,16 +375,28 @@ def execute_sandboxed(
     )
 
     sandbox_dir = tempfile.mkdtemp(prefix="litebench_sbx_")
+    started = time.perf_counter()
     try:
         script_path = os.path.join(sandbox_dir, "run.py")
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(script)
-        return _run_child(
+        passed, issues = _run_child(
             script_path, sandbox_dir, _sandbox_env(sandbox_dir), timeout, sentinel
         )
+        log.debug(
+            f"sandbox: verdict={'PASS' if passed else 'FAIL'} "
+            f"in {(time.perf_counter() - started) * 1000:.0f}ms "
+            f"code_chars={len(untrusted_code)} "
+            f"issues={'; '.join(issues[:5]) if issues else 'none'}"
+        )
+        return passed, issues
     except subprocess.TimeoutExpired:
+        log.debug(
+            f"sandbox: TIMEOUT after {timeout}s, code_chars={len(untrusted_code)}"
+        )
         return False, ["execution timed out"]
     except Exception as e:
+        log.debug(f"sandbox: error {type(e).__name__}: {e}")
         return False, [f"sandbox error: {e}"]
     finally:
         shutil.rmtree(sandbox_dir, ignore_errors=True)

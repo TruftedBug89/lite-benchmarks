@@ -14,10 +14,12 @@ from rich.console import Console
 
 from .benchmarks import create_benchmark
 from .config import BenchmarkConfig, Config, ModelConfig, Settings
+from .logging_utils import get_logger, log_ref, run_log_rel, scrub
 from .providers import GenerationResult, generate
 from .results_store import aggregate, compute_question_hash, is_fatal_error, save_results
 
 console = Console()
+log = get_logger("engine")
 
 # Permanent client/context errors that will never succeed on retry. Auth/quota
 # errors are handled separately as fatal (they abort the whole model). Word
@@ -59,26 +61,61 @@ class EngineCallbacks(Protocol):
 
 class DefaultEngineCallbacks:
     def on_event(self, model_name: str, message: str) -> None:
-        console.print(f"[{model_name}] {message}")
+        console.print(f"[{model_name}] {message}{log_ref()}")
+        log.info(f"[{model_name}] {scrub(message)}")
 
     def on_benchmark_start(self, model_name: str, bench_name: str, total_questions: int) -> None:
-        pass
+        log.info(
+            f"[{model_name}] benchmark {bench_name} starting: {total_questions} questions"
+        )
 
     def on_question_retry(self, model_name: str, bench_name: str, info: dict) -> None:
         console.print(
             f"[dim][{model_name}] Q#{info.get('question_id', 0)} attempt "
             f"{info.get('attempt', '?')} failed ({info.get('error', '')}); "
-            f"retrying in {info.get('backoff', 0):.0f}s…[/dim]"
+            f"retrying in {info.get('backoff', 0):.0f}s…[/dim]{log_ref()}"
+        )
+        log.warning(
+            f"[{model_name}] [{bench_name}] Q#{info.get('question_id', 0)} retry "
+            f"{info.get('attempt', '?')}/{info.get('max_attempts') or '∞'} after "
+            f"{info.get('backoff', 0):.0f}s: {scrub(str(info.get('error', '')))}"
         )
 
     def on_question_done(self, model_name: str, bench_name: str, detail: dict) -> None:
-        pass
+        log.debug(
+            f"[{model_name}] [{bench_name}] Q#{detail.get('question_id', 0)} "
+            f"status={detail.get('status')} score={detail.get('score')} "
+            f"in/out/think={detail.get('input_tokens', 0)}/{detail.get('output_tokens', 0)}/"
+            f"{detail.get('thinking_tokens', 0)} time={detail.get('total_time_ms')}ms "
+            f"tps={detail.get('tokens_per_second')} cost={detail.get('cost_usd')} "
+            f"trunc={bool(detail.get('is_truncated'))} finish={detail.get('finish_reason')} "
+            f"err={scrub(str(detail.get('error_msg', '')))}"
+        )
 
     def on_benchmark_done(self, model_name: str, bench_name: str, summary: dict) -> None:
-        pass
+        console.print(
+            f"[bold][{model_name}] {bench_name} done: score {summary.get('score')} "
+            f"({summary.get('correct')}/{summary.get('total')}, "
+            f"provider_err={summary.get('provider_error_count', 0)}, "
+            f"eval_err={summary.get('eval_error_count', 0)}, "
+            f"trunc={summary.get('truncated_count', 0)})[/bold]{log_ref()}"
+        )
+        log.info(
+            f"[{model_name}] [{bench_name}] done: score={summary.get('score')} "
+            f"correct={summary.get('correct')}/{summary.get('total')} "
+            f"attempted={summary.get('attempted')}/{summary.get('total_questions')} "
+            f"excluded={summary.get('excluded_count')} "
+            f"provider_err={summary.get('provider_error_count', 0)} "
+            f"eval_err={summary.get('eval_error_count', 0)} "
+            f"trunc={summary.get('truncated_count', 0)} "
+            f"tokens={summary.get('total_tokens')} "
+            f"cost={summary.get('total_cost_usd')} "
+            f"avg_tps={summary.get('avg_tokens_per_second')} "
+            f"avg_ms={summary.get('avg_time_ms')}"
+        )
 
     def on_model_done(self, model_name: str) -> None:
-        pass
+        log.info(f"[{model_name}] model run finished")
 
 
 class FatalModelError(Exception):
@@ -126,7 +163,11 @@ def process_question(
             "response": "",
         }
 
+    bench_name = getattr(bench_obj, "name", "?")
     prompt = bench_obj.format_prompt(q)
+    log.debug(
+        f"[{model.name}] [{bench_name}] Q#{qi} start: prompt_len={len(prompt)} chars"
+    )
     max_attempts: int | None = settings.max_retries if settings.max_retries > 0 else None
     gen_result: GenerationResult | None = None
     gen_error: Exception | None = None
@@ -146,20 +187,38 @@ def process_question(
         except Exception as e:
             gen_error = e
             if is_fatal_error(e):
+                log.error(
+                    f"[{model.name}] [{bench_name}] Q#{qi} FATAL provider error: "
+                    f"{scrub(str(e)[:500])}"
+                )
                 raise FatalModelError(f"Fatal error for {model.name}: {str(e)[:500]}") from e
 
             # Permanent errors (bad request, context too long, content filter)
             # will never succeed no matter how long we wait — record and move on.
             if not _is_retryable_error(e):
+                log.warning(
+                    f"[{model.name}] [{bench_name}] Q#{qi} permanent error "
+                    f"(no retry): {scrub(str(e)[:500])}"
+                )
                 break
 
+            # Only the engine's own semantic RuntimeErrors (empty completion,
+            # no text content) get the "same error 3x in a row" bailout — those
+            # are deterministic and would repeat forever. Transient provider
+            # failures (connection errors, timeouts, 429s) must keep retrying
+            # per the retry policy (max_retries=0 = wait indefinitely), not
+            # silently score 0 after three identical messages.
             err_msg_str = str(e)
-            if err_msg_str == last_error_msg:
+            if isinstance(e, RuntimeError) and err_msg_str == last_error_msg:
                 consecutive_same_error += 1
             else:
                 consecutive_same_error = 1
                 last_error_msg = err_msg_str
             if consecutive_same_error >= 3:
+                log.warning(
+                    f"[{model.name}] [{bench_name}] Q#{qi} same provider error 3x "
+                    f"in a row, giving up: {scrub(str(e)[:500])}"
+                )
                 break
 
             attempt += 1
@@ -171,6 +230,10 @@ def process_question(
             if "429" in err_str or "rate limit" in err_str:
                 backoff = max(60.0, backoff)
             backoff += random.uniform(0, 5.0)
+            log.debug(
+                f"[{model.name}] [{bench_name}] Q#{qi} attempt {attempt} failed "
+                f"({scrub(str(e)[:500])}); backing off {backoff:.0f}s"
+            )
             if on_retry:
                 on_retry(
                     model.name,
@@ -189,6 +252,7 @@ def process_question(
 
     if gen_result is None:
         if stopped:
+            log.debug(f"[{model.name}] [{bench_name}] Q#{qi} cancelled")
             return {
                 "question_id": qi,
                 "status": "cancelled",
@@ -198,6 +262,10 @@ def process_question(
             }
         err_msg = str(gen_error) if gen_error else "Max retries exceeded"
         err_type = type(gen_error).__name__ if gen_error else "ProviderError"
+        log.warning(
+            f"[{model.name}] [{bench_name}] Q#{qi} gave up after "
+            f"{attempt} attempt(s): {scrub(err_msg[:500])}"
+        )
         return {
             "question_id": qi,
             "status": "error",
@@ -256,8 +324,12 @@ def process_question(
         judge_response = f"Evaluator Error: {eval_exc}"
         status = "eval_error"
         err_msg = str(eval_exc)
+        log.exception(
+            f"[{model.name}] [{bench_name}] Q#{qi} scorer error: {scrub(str(eval_exc)[:500])}"
+        )
         console.print(
-            f"[bold red]Scorer error on benchmark {bench_obj.name} Q#{qi}: {eval_exc}[/bold red]"
+            f"[bold red]Scorer error on benchmark {bench_obj.name} Q#{qi}: "
+            f"{eval_exc}[/bold red]{log_ref()}"
         )
 
     res_dict: dict = {
@@ -311,6 +383,32 @@ def run_engine(
 
     results: dict = dict(existing_results) if existing_results else {}
     settings = config.settings
+
+    log.info(
+        f"Engine run starting: {len(models)} models, {len(benchmarks)} benchmarks, "
+        f"max_concurrency={settings.max_concurrency}, "
+        f"max_concurrent_models={settings.max_concurrent_models} "
+        f"(details → {run_log_rel()})"
+    )
+    for m in models:
+        log.debug(
+            f"model: id={m.id!r} name={m.name!r} thinking_effort={m.thinking_effort} "
+            f"max_tokens={m.max_tokens} api_base={m.api_base} "
+            f"api_key_env={m.api_key_env} extra_params={list(m.extra_params)}"
+        )
+    for bk, bc in benchmarks.items():
+        log.debug(
+            f"benchmark: {bk} enabled={bc.enabled} dataset={bc.dataset} "
+            f"split={bc.split} subset={bc.subset} revision={bc.revision} "
+            f"num_samples={bc.num_samples}"
+        )
+    log.debug(f"settings: seed={settings.seed} temperature={settings.temperature} "
+              f"max_tokens={settings.max_tokens} request_timeout={settings.request_timeout} "
+              f"code_exec_timeout={settings.code_exec_timeout} max_retries={settings.max_retries} "
+              f"results_dir={settings.results_dir} hf_token_env={settings.hf_token_env} "
+              f"allow_unsafe_code_execution={settings.allow_unsafe_code_execution}")
+
+    results: dict = dict(existing_results) if existing_results else {}
 
     def _stopped() -> bool:
         return bool(should_stop and should_stop())
@@ -522,6 +620,10 @@ def run_engine(
                     try:
                         aggregate(mdata, config)
                         save_results(results, config, settings.results_dir, "latest.json")
+                        log.info(
+                            f"[{model.name}] checkpoint saved for {bench_name} "
+                            f"({len(details)} details)"
+                        )
                     except Exception as persist_err:
                         callbacks.on_event(
                             model.name,

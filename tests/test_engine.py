@@ -122,6 +122,67 @@ def test_process_question_permanent_error_never_waits():
         assert result["score"] == 0.0
 
 
+def test_process_question_persistent_connection_error_never_scores_zero():
+    """Regression: identical transient errors (e.g. litellm.APIError connection
+    errors) must keep retrying forever with max_retries=0 — the "same error 3x
+    in a row" bailout only applies to the engine's own semantic RuntimeErrors
+    (empty completion, no text content), never to provider/network failures."""
+    bench = MagicMock()
+    bench.name = "mock_bench"
+    bench.format_prompt.return_value = "Test prompt"
+    bench.evaluate.return_value = 1.0
+
+    model = ModelConfig(id="test/model", name="Test Model")
+    settings = Settings(max_retries=0)
+    conn_error = ValueError("litellm.APIError: APIError: OpenAIException - Connection error.")
+    retries: list[dict] = []
+
+    with (
+        patch(
+            "lite_bench.engine.generate",
+            side_effect=[conn_error, conn_error, conn_error, conn_error, _ok_gen()],
+        ) as mock_generate,
+        patch("lite_bench.engine._interruptible_sleep", return_value=False),
+    ):
+        result = process_question(
+            0, {"q": 1}, bench, model, settings,
+            on_retry=lambda m, b, info: retries.append(info),
+        )
+
+        assert mock_generate.call_count == 5  # 4 identical connection errors, never bailed
+        assert result["status"] == "success"
+        assert result["score"] == 1.0
+        assert len(retries) == 4
+
+
+def test_process_question_same_runtime_error_three_times_gives_up():
+    """The 3x bailout still protects against the engine's own semantic
+    RuntimeErrors (empty completion) repeating identically forever."""
+    bench = MagicMock()
+    bench.name = "mock_bench"
+    bench.format_prompt.return_value = "Test prompt"
+
+    model = ModelConfig(id="test/model", name="Test Model")
+    settings = Settings(max_retries=0)
+
+    with (
+        patch(
+            "lite_bench.engine.generate",
+            side_effect=[
+                RuntimeError("The provider returned an empty completion."),
+                RuntimeError("The provider returned an empty completion."),
+                RuntimeError("The provider returned an empty completion."),
+                RuntimeError("The provider returned an empty completion."),
+            ],
+        ) as mock_generate,
+        patch("lite_bench.engine._interruptible_sleep", return_value=False),
+    ):
+        result = process_question(0, {"q": 1}, bench, model, settings)
+
+        assert mock_generate.call_count == 3  # bailed after 3 identical RuntimeErrors
+        assert result["status"] == "error"
+
+
 def test_process_question_capped_retries():
     """A positive max_retries still caps attempts on transient errors."""
     bench = MagicMock()

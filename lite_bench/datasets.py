@@ -9,8 +9,10 @@ from datasets import load_dataset
 from rich.console import Console
 
 from .config import BenchmarkConfig, Settings
+from .logging_utils import get_logger
 
 console = Console()
+log = get_logger("datasets")
 
 _cache: dict[str, list[dict]] = {}
 
@@ -42,6 +44,7 @@ def load_questions(
 
     label = bench.dataset + (f" ({bench.subset})" if bench.subset else "")
     console.print(f"  [dim]Loading {label}...[/dim]")
+    log.info(f"Loading dataset {bench.dataset} (split={bench.split})")
 
     kwargs: dict = {"path": bench.dataset, "split": bench.split}
     if bench.subset:
@@ -56,6 +59,10 @@ def load_questions(
         ds = load_dataset(**kwargs)
     except Exception as e:
         if "gated" in str(e).lower() or "401" in str(e) or "token" in str(e).lower():
+            log.warning(
+                f"Dataset {bench.dataset} requires authentication; "
+                f"set {settings.hf_token_env}"
+            )
             console.print(
                 f"  [red]Dataset {bench.dataset} requires authentication.[/red]\n"
                 f"  [red]Set the {settings.hf_token_env} environment variable with a "
@@ -92,6 +99,11 @@ def load_questions(
 
     questions = [dict(row) for row in ds]
     _cache[cache_key] = questions
+    log.info(
+        f"Dataset {bench.dataset} ready: available={available} pool={pool_size} "
+        f"sampled={len(questions)} seed={settings.seed} "
+        f"filter={getattr(row_filter, '__name__', None)}"
+    )
     if row_filter is not None:
         console.print(
             f"  [dim]Sampled {len(questions)} questions from {pool_size} matching rows "
