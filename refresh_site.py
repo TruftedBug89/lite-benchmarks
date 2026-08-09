@@ -11,6 +11,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -156,8 +157,6 @@ def build_summary(config: Config, results: dict, run_timestamp: str | None = Non
         "models": models,
     }
 
-
-import math
 
 def _sanitize_json(obj: any) -> any:
     if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):

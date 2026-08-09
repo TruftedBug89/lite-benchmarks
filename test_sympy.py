@@ -1,5 +1,6 @@
 import sympy
 from sympy.parsing.sympy_parser import parse_expr
+
 gd = {"__builtins__": {}}
 gd.update(sympy.__dict__)
 
