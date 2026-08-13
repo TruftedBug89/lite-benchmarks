@@ -21,6 +21,8 @@
 > **Project Status:** 🟢 **Working / Functional**  
 > *This status must not be changed by AI unless explicitly instructed by the repository owner.*
 
+> [!NOTE]
+> **Maintenance:** stable, but **not actively updated** — no scheduled updates planned.
 
 ## 🌐 Live Leaderboard
 
