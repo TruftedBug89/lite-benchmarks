@@ -136,8 +136,11 @@ def generate(results: dict, config: Config, chart_paths: list[str]) -> str:
         "*Small, repeatable samples of established benchmarks with **100% programmatic scoring**. "
         "No LLM-as-judge. Deterministic sampling. Sandboxed code execution.*"
     )
-    _a("")
     _a("</div>")
+    _a("")
+    _a("> [!WARNING]")
+    _a("> **Project Status:** 🟡 **In Development / Work in Progress**  ")
+    _a("> *This repository is currently under active development and may contain experimental, partial, or non-working features.*")
     _a("")
 
     # ── Live site ────────────────────────────────────────────────────

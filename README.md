@@ -17,12 +17,9 @@
 
 </div>
 
-> [!NOTE]
-> **Project Status:** 🟢 **Working / Functional**  
-> *This status must not be changed by AI unless explicitly instructed by the repository owner.*
-
-> [!NOTE]
-> **Maintenance:** stable, but **not actively updated** — no scheduled updates planned.
+> [!WARNING]
+> **Project Status:** 🟡 **In Development / Work in Progress**  
+> *This repository is currently under active development and may contain experimental, partial, or non-working features.*
 
 ## 🌐 Live Leaderboard
 

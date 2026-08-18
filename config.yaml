@@ -29,9 +29,11 @@ models:
     max_tokens: 16384
   - id: deepseek/deepseek-chat
     name: DeepSeek V3
+    max_tokens: 16384
   - id: groq/llama-3.3-70b-versatile
     name: Llama 3.3 70B (High Thinking)
     thinking_effort: high
+    max_tokens: 16384
   # Local LM Studio examples (start the local server first, default port 1234):
   # - id: lm_studio/qwen2.5-coder-7b-instruct
   #   name: Qwen 2.5 Coder 7B (local)
@@ -117,7 +119,7 @@ benchmarks:
 
 settings:
   seed: 42
-  max_tokens: 4096
+  max_tokens: 16384
   temperature: 0.0
   request_timeout: 300
   code_exec_timeout: 30

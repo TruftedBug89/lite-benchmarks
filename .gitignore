@@ -14,10 +14,11 @@ Thumbs.db
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
-results/results_*.json
-results/latest.json
+# Temporary results locks and scratch files
+results/*.lock
+results/*.tmp
+results/*.corrupt
 results/archive/
-custom_models.json
 logs/
 
 # Generated charts & sandbox scratch — regenerated on demand, never tracked.

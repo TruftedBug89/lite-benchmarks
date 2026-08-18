@@ -16,7 +16,20 @@ _VALID_THINKING_EFFORTS = frozenset(
     {"max", "xhigh", "ultracode", "high", "medium", "mid", "low", "min"}
 )
 _MODEL_KEYS = frozenset(
-    {"id", "name", "thinking_effort", "max_tokens", "api_base", "api_key_env", "extra_params"}
+    {
+        "id",
+        "name",
+        "thinking_effort",
+        "max_tokens",
+        "api_base",
+        "api_key_env",
+        "extra_params",
+        "quantization",
+        "quant",
+        "kv_quant",
+        "flash_attention",
+        "flash_attn",
+    }
 )
 _BENCHMARK_KEYS = frozenset(
     {"enabled", "dataset", "num_samples", "split", "subset", "revision"}
@@ -49,6 +62,9 @@ class ModelConfig:
     max_tokens: int | None = None
     api_base: str | None = None
     api_key_env: str | None = None
+    quantization: str | None = None
+    kv_quant: str | None = None
+    flash_attention: bool | None = None
     extra_params: dict[str, Any] = field(default_factory=dict)
 
 
@@ -196,6 +212,17 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         api_key_env_val = item.get("api_key_env")
         if api_key_env_val is not None:
             api_key_env_val = _string(api_key_env_val, f"models[{index}].api_key_env")
+        quantization_val = item.get("quantization") or item.get("quant")
+        if quantization_val is not None:
+            quantization_val = _string(quantization_val, f"models[{index}].quantization")
+        kv_quant_val = item.get("kv_quant")
+        if kv_quant_val is not None:
+            kv_quant_val = _string(kv_quant_val, f"models[{index}].kv_quant")
+        flash_attn_val = item.get("flash_attention")
+        if flash_attn_val is None:
+            flash_attn_val = item.get("flash_attn")
+        if flash_attn_val is not None:
+            flash_attn_val = bool(flash_attn_val)
         extra_params = item.get("extra_params", {})
         if not isinstance(extra_params, Mapping):
             raise ValueError(f"models[{index}].extra_params must be a mapping.")
@@ -207,6 +234,9 @@ def load_config(path: str | Path = "config.yaml") -> Config:
                 max_tokens=max_tokens_val,
                 api_base=api_base_val,
                 api_key_env=api_key_env_val,
+                quantization=quantization_val,
+                kv_quant=kv_quant_val,
+                flash_attention=flash_attn_val,
                 extra_params=dict(extra_params),
             )
         )

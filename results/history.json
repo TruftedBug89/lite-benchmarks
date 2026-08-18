@@ -1,0 +1,96 @@
+[
+  {
+    "timestamp": "2026-07-28T02:41:07.856853+00:00",
+    "models": {
+      "Deepseek v4 Pro Max": {
+        "overall_score": 0.501,
+        "benchmarks": {
+          "bigcodebench_hard": 0.22,
+          "humanevalplus": 0.98,
+          "mbppplus": 0.06,
+          "gpqa": 0.6,
+          "scibench": 0.46,
+          "aime": 0.36,
+          "math_500": 0.84,
+          "mmlu_pro": 0.78,
+          "ifeval": 0.84,
+          "scicode": 0.0,
+          "supergpqa": 0.4,
+          "tau_bench": 0.1
+        },
+        "outdated": true,
+        "completed_benchmarks": 12,
+        "total_benchmarks": 12,
+        "is_complete": true,
+        "completion_status": "complete"
+      },
+      "Deepseek v4 Flash Max": {
+        "overall_score": 0.478,
+        "benchmarks": {
+          "bigcodebench_hard": 0.22,
+          "humanevalplus": 0.88,
+          "mbppplus": 0.1,
+          "gpqa": 0.56,
+          "scibench": 0.48,
+          "aime": 0.28,
+          "math_500": 0.82,
+          "mmlu_pro": 0.78,
+          "ifeval": 0.86,
+          "scicode": 0.0,
+          "supergpqa": 0.28,
+          "tau_bench": 0.12
+        },
+        "outdated": true,
+        "completed_benchmarks": 12,
+        "total_benchmarks": 12,
+        "is_complete": true,
+        "completion_status": "complete"
+      },
+      "Deepseek v4 Flash": {
+        "overall_score": 0.461,
+        "benchmarks": {
+          "bigcodebench_hard": 0.16,
+          "humanevalplus": 0.88,
+          "mbppplus": 0.1,
+          "gpqa": 0.52,
+          "scibench": 0.4,
+          "aime": 0.26,
+          "math_500": 0.84,
+          "mmlu_pro": 0.78,
+          "ifeval": 0.84,
+          "scicode": 0.0,
+          "supergpqa": 0.32,
+          "tau_bench": 0.08
+        },
+        "outdated": true,
+        "completed_benchmarks": 12,
+        "total_benchmarks": 12,
+        "is_complete": true,
+        "completion_status": "complete"
+      },
+      "Gemma 4 31B": {
+        "overall_score": 0.2065,
+        "benchmarks": {
+          "bigcodebench_hard": 0.0,
+          "gpqa": 0.617,
+          "scibench": 0.2222,
+          "aime": 0.2
+        },
+        "outdated": true,
+        "completed_benchmarks": 4,
+        "total_benchmarks": 12,
+        "is_complete": false,
+        "completion_status": "partial (4/12)"
+      },
+      "Gemma 4 26B a4b": {
+        "overall_score": null,
+        "benchmarks": {},
+        "outdated": true,
+        "completed_benchmarks": 0,
+        "total_benchmarks": 12,
+        "is_complete": false,
+        "completion_status": "partial (0/12)"
+      }
+    }
+  }
+]

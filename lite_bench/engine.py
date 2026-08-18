@@ -15,6 +15,7 @@ from rich.console import Console
 from .benchmarks import create_benchmark
 from .config import BenchmarkConfig, Config, ModelConfig, Settings
 from .logging_utils import get_logger, log_ref, run_log_rel, scrub
+from .metadata import detect_local_model_metadata
 from .providers import GenerationResult, generate
 from .results_store import aggregate, compute_question_hash, is_fatal_error, save_results
 
@@ -53,6 +54,7 @@ def _is_retryable_error(e: Exception) -> bool:
 class EngineCallbacks(Protocol):
     def on_event(self, model_name: str, message: str) -> None: ...
     def on_benchmark_start(self, model_name: str, bench_name: str, total_questions: int) -> None: ...
+    def on_question_start(self, model_name: str, bench_name: str, question_id: int, total_questions: int) -> None: ...
     def on_question_retry(self, model_name: str, bench_name: str, info: dict) -> None: ...
     def on_question_done(self, model_name: str, bench_name: str, detail: dict) -> None: ...
     def on_benchmark_done(self, model_name: str, bench_name: str, summary: dict) -> None: ...
@@ -68,6 +70,9 @@ class DefaultEngineCallbacks:
         log.info(
             f"[{model_name}] benchmark {bench_name} starting: {total_questions} questions"
         )
+
+    def on_question_start(self, model_name: str, bench_name: str, question_id: int, total_questions: int) -> None:
+        pass
 
     def on_question_retry(self, model_name: str, bench_name: str, info: dict) -> None:
         console.print(
@@ -144,6 +149,8 @@ def process_question(
     settings: Settings,
     should_stop: Callable[[], bool] | None = None,
     on_retry: Callable[[str, str, dict], None] | None = None,
+    on_start: Callable[[str, str, int, int], None] | None = None,
+    total_questions: int = 50,
 ) -> dict:
     """Process a single question with separate provider-retry and evaluation logic.
 
@@ -165,6 +172,12 @@ def process_question(
 
     bench_name = getattr(bench_obj, "name", "?")
     prompt = bench_obj.format_prompt(q)
+    if on_start:
+        try:
+            on_start(model.name, bench_name, qi, total_questions)
+        except Exception:
+            pass
+
     log.debug(
         f"[{model.name}] [{bench_name}] Q#{qi} start: prompt_len={len(prompt)} chars"
     )
@@ -415,13 +428,28 @@ def run_engine(
 
     # Pre-create per-model result containers single-threaded (no races later).
     for model in models:
-        results.setdefault(
+        meta = detect_local_model_metadata(
+            model_id=model.id,
+            model_name=model.name,
+            api_base=model.api_base,
+            explicit_quant=model.quantization,
+            explicit_kv_quant=model.kv_quant,
+            explicit_flash_attn=model.flash_attention,
+        )
+        entry = results.setdefault(
             model.name,
             {
                 "model_id": model.id,
                 "thinking_effort": model.thinking_effort,
             },
         )
+        if meta.get("quantization"):
+            entry["quantization"] = meta["quantization"]
+        if meta.get("kv_quant"):
+            entry["kv_quant"] = meta["kv_quant"]
+        if meta.get("flash_attention") is not None:
+            entry["flash_attention"] = meta["flash_attention"]
+
         callbacks.on_event(model.name, f"Starting model run for {model.name}")
 
     results_lock = threading.Lock()  # guards results mutation + checkpoint saves
@@ -490,14 +518,18 @@ def run_engine(
                 )
 
                 details: list[dict] = []
-                max_concurrency = max(1, settings.max_concurrency)
+                # Local GPU runners (LM Studio / Ollama) default to sequential questions unless explicit
+                is_local_model = model.id.startswith("lm_studio/") or (model.api_base and "1234" in model.api_base)
+                if is_local_model and "concurrency" not in model.extra_params:
+                    effective_concurrency = min(settings.max_concurrency, 1)
+                else:
+                    effective_concurrency = max(1, settings.max_concurrency)
 
                 # Manual executor (no `with`) so stop never waits on in-flight calls.
-                executor = ThreadPoolExecutor(max_workers=max_concurrency)
-                # Not every callbacks object implements on_question_retry (the
-                # Protocol is structural); tolerate its absence so a minimal
-                # custom callbacks class doesn't AttributeError at submit time.
+                executor = ThreadPoolExecutor(max_workers=effective_concurrency)
+                # Not every callbacks object implements on_question_retry or on_question_start
                 _on_retry = getattr(callbacks, "on_question_retry", None)
+                _on_start = getattr(callbacks, "on_question_start", None)
                 futures = {
                     executor.submit(
                         process_question,
@@ -508,6 +540,8 @@ def run_engine(
                         settings,
                         should_stop,
                         _on_retry,
+                        _on_start,
+                        len(questions),
                     ): (qi, q)
                     for qi, q in enumerate(questions)
                 }

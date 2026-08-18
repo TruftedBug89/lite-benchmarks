@@ -241,6 +241,40 @@
     /* Status Badges */
     .status-badge.saved { background: rgba(255,255,255,0.06); color: var(--text-muted); border: 1px solid rgba(255,255,255,0.12); }
     .status-badge.live { background: rgba(6,182,212,0.2); color: #38bdf8; border: 1px solid rgba(6,182,212,0.4); box-shadow: 0 0 10px rgba(6,182,212,0.3); }
+
+    /* Metadata Tags for Quantization, KV Quant, and Flash Attention */
+    .meta-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.2rem;
+      font-size: 0.68rem;
+      font-family: 'JetBrains Mono', monospace;
+      padding: 0.12rem 0.38rem;
+      border-radius: 4px;
+      border: 1px solid transparent;
+      line-height: 1.2;
+      font-weight: 500;
+    }
+    .meta-quant {
+      background: rgba(168, 85, 247, 0.15);
+      color: #c084fc;
+      border-color: rgba(168, 85, 247, 0.35);
+    }
+    .meta-kv {
+      background: rgba(59, 130, 246, 0.15);
+      color: #60a5fa;
+      border-color: rgba(59, 130, 246, 0.35);
+    }
+    .meta-fa-on {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border-color: rgba(16, 185, 129, 0.35);
+    }
+    .meta-fa-off {
+      background: rgba(239, 68, 68, 0.12);
+      color: #f87171;
+      border-color: rgba(239, 68, 68, 0.25);
+    }
     .modal-overlay {
       display: none;
       position: fixed;
@@ -332,9 +366,17 @@
           <div class="stat-value" id="elapsed-time-stat" style="color: var(--accent-cyan);">00:00</div>
           <div class="stat-label">Elapsed</div>
         </div>
-        <div class="stat-box">
+        <div class="stat-box" title="Active models being evaluated">
           <div class="stat-value" id="active-models-stat" style="color: var(--accent-primary);">0</div>
-          <div class="stat-label">Active</div>
+          <div class="stat-label">Active Models</div>
+        </div>
+        <div class="stat-box" title="Total Tokens Per Second across all concurrent workers">
+          <div class="stat-value" id="fleet-tps-stat" style="color: var(--accent-cyan); font-weight:800;">0.0/s</div>
+          <div class="stat-label">⚡ Fleet Speed</div>
+        </div>
+        <div class="stat-box" title="Total active in-flight benchmark questions currently processing">
+          <div class="stat-value" id="in-flight-stat" style="color: var(--accent-green);">0</div>
+          <div class="stat-label">⏳ In-Flight Qs</div>
         </div>
         <div class="stat-box">
           <div class="stat-value" id="total-tokens-stat" style="color: var(--accent-amber);">0</div>
@@ -430,6 +472,20 @@
         LiteLLM auto-detects keys for known providers. Select a specific env var to override.
       </div>
     </div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+      <div class="form-group">
+        <label class="form-label">Model Quantization</label>
+        <input type="text" class="form-input" id="modal-quantization" placeholder="e.g. Q4_K_M, Q8_0, FP16">
+      </div>
+      <div class="form-group">
+        <label class="form-label">KV Cache Quant</label>
+        <input type="text" class="form-input" id="modal-kv-quant" placeholder="e.g. f16, q8_0, q4_0">
+      </div>
+    </div>
+    <label class="toggle-row" style="margin-top: 0.2rem;">
+      <span class="toggle-switch"><input type="checkbox" id="modal-flash-attn" checked><span class="toggle-slider"></span></span>
+      <span>⚡ Flash Attention Enabled</span>
+    </label>
     <label class="toggle-row" style="margin-top: 0.3rem;">
       <span class="toggle-switch"><input type="checkbox" id="modal-api-toggle" onchange="toggleApiUrl()"><span class="toggle-slider"></span></span>
       Custom API Base URL
@@ -583,6 +639,28 @@
     const provider = modelId.split('/')[0].toLowerCase();
     const hint = document.getElementById('api-key-hint');
     const sel = document.getElementById('modal-api-key-env');
+    const quantInput = document.getElementById('modal-quantization');
+
+    // Auto-detect quantization string if present in modelId
+    const quantMatch = modelId.match(/(?:[_\-\.\/\s]|^)(Q[0-9]+_[A-Z0-9_]+|IQ[0-9]+_[A-Z0-9_]+|Q[0-9]+_[0-9]+|BF16|FP16|F16|F32|AWQ|GPTQ|EXL2|Q[0-9]+_K(?:_[SML])?|Q1_0|Q2_K|Q3_K_[SML]|Q4_K_[MS]|Q4_0|Q4_1|Q5_K_[MS]|Q5_0|Q5_1|Q6_K|Q8_0)(?:[_\-\.\/\s]|$)/i);
+    if (quantMatch && quantInput && !quantInput.value) {
+      quantInput.value = quantMatch[1].toUpperCase();
+    }
+
+    if (provider === 'lm_studio') {
+      const toggle = document.getElementById('modal-api-toggle');
+      const baseInput = document.getElementById('modal-api-base');
+      if (toggle && !toggle.checked) {
+        toggle.checked = true;
+        toggleApiUrl();
+      }
+      if (baseInput && !baseInput.value) {
+        baseInput.value = 'http://localhost:1234/v1';
+      }
+      hint.innerHTML = `Local <strong>LM Studio</strong> detected. Connecting to <code>http://localhost:1234/v1</code>.`;
+      return;
+    }
+
     const suggested = PROVIDER_KEY_MAP[provider];
     if (suggested) {
       const isSet = envKeys.includes(suggested);
@@ -677,11 +755,19 @@
       container.innerHTML = '<div style="font-size: 0.8rem; color: var(--text-dim); padding: 0.5rem;">No models in fleet. Add one above.</div>';
       return;
     }
-    container.innerHTML = fleet.map((m, i) => `
+    container.innerHTML = fleet.map((m, i) => {
+      let tags = '';
+      if (m.quantization) tags += `<span class="meta-tag meta-quant">${escapeHtml(m.quantization)}</span>`;
+      if (m.kv_quant) tags += `<span class="meta-tag meta-kv">KV: ${escapeHtml(m.kv_quant)}</span>`;
+      if (m.flash_attention !== null && m.flash_attention !== undefined) tags += `<span class="meta-tag ${m.flash_attention ? 'meta-fa-on' : 'meta-fa-off'}">${m.flash_attention ? '⚡ FA' : 'No FA'}</span>`;
+      const tagsHtml = tags ? `<div style="display:flex; flex-wrap:wrap; gap:0.25rem; margin-top:0.2rem;">${tags}</div>` : '';
+
+      return `
       <div class="fleet-item">
         <div style="flex:1; min-width:0;">
           <div class="fi-name">${escapeHtml(m.name)}</div>
           <div class="fi-id">${escapeHtml(m.id)}</div>
+          ${tagsHtml}
         </div>
         <select onchange="onFleetEffortChange(${i}, this.value)" title="Reasoning effort">
           <option value="" ${!m.thinking_effort ? 'selected' : ''}>None</option>
@@ -692,13 +778,23 @@
         </select>
         <span class="fi-remove" onclick="removeFromFleet(${i})">&times;</span>
       </div>
-    `).join('');
+    `;
+    }).join('');
   }
 
   function addFromSaved(id) {
     const m = savedModels.find(s => s.id === id);
     if (!m) return;
-    addToFleet({ id: m.id, name: m.name, thinking_effort: m.thinking_effort || '', api_base: m.api_base || '', api_key_env: m.api_key_env || '' });
+    addToFleet({
+      id: m.id,
+      name: m.name,
+      thinking_effort: m.thinking_effort || '',
+      api_base: m.api_base || '',
+      api_key_env: m.api_key_env || '',
+      quantization: m.quantization || '',
+      kv_quant: m.kv_quant || '',
+      flash_attention: m.flash_attention != null ? m.flash_attention : null,
+    });
     renderFleet();
   }
 
@@ -731,6 +827,9 @@
     const id = document.getElementById('modal-model-id').value.trim();
     const name = document.getElementById('modal-model-name').value.trim() || id;
     const thinking = document.getElementById('modal-thinking').value;
+    const quant = document.getElementById('modal-quantization').value.trim();
+    const kvQuant = document.getElementById('modal-kv-quant').value.trim();
+    const flashAttn = document.getElementById('modal-flash-attn').checked;
     const apiBase = document.getElementById('modal-api-toggle').checked
       ? document.getElementById('modal-api-base').value.trim() : '';
     let apiKeyEnv = document.getElementById('modal-api-key-env').value;
@@ -741,9 +840,27 @@
 
     if (!id) return;
 
-    const entry = { id, name, thinking_effort: thinking || null, api_base: apiBase || null, api_key_env: apiKeyEnv || null };
+    const entry = {
+      id,
+      name,
+      thinking_effort: thinking || null,
+      quantization: quant || null,
+      kv_quant: kvQuant || null,
+      flash_attention: flashAttn,
+      api_base: apiBase || null,
+      api_key_env: apiKeyEnv || null
+    };
 
-    addToFleet({ id, name, thinking_effort: thinking || '', api_base: apiBase || '', api_key_env: apiKeyEnv || '' });
+    addToFleet({
+      id,
+      name,
+      thinking_effort: thinking || '',
+      quantization: quant || '',
+      kv_quant: kvQuant || '',
+      flash_attention: flashAttn,
+      api_base: apiBase || '',
+      api_key_env: apiKeyEnv || ''
+    });
     renderFleet();
 
     if (savePermanent) {
@@ -762,6 +879,9 @@
     document.getElementById('modal-model-id').value = '';
     document.getElementById('modal-model-name').value = '';
     document.getElementById('modal-thinking').value = '';
+    document.getElementById('modal-quantization').value = '';
+    document.getElementById('modal-kv-quant').value = '';
+    document.getElementById('modal-flash-attn').checked = true;
     document.getElementById('modal-api-key-env').value = '';
     document.getElementById('modal-api-toggle').checked = false;
     document.getElementById('modal-api-base').value = '';
@@ -779,6 +899,9 @@
       models: fleet.map(m => ({
         id: m.id, name: m.name,
         thinking_effort: m.thinking_effort || null,
+        quantization: m.quantization || null,
+        kv_quant: m.kv_quant || null,
+        flash_attention: m.flash_attention != null ? m.flash_attention : null,
         api_base: m.api_base || null,
         api_key_env: m.api_key_env || null,
       })),
@@ -855,7 +978,23 @@
 
     const states = Object.values(status.models || {});
     lastStatusModels = states;
-    document.getElementById('active-models-stat').innerText = states.filter(st => !st.is_finished && !st.is_failed).length;
+    const activeModels = states.filter(st => !st.is_finished && !st.is_failed);
+    document.getElementById('active-models-stat').innerText = activeModels.length;
+
+    // Real-time Fleet TPS (Tokens/sec across all active workers)
+    const fleetTps = activeModels.reduce((acc, st) => acc + (st.avg_tps || 0), 0);
+    const fleetTpsEl = document.getElementById('fleet-tps-stat');
+    if (fleetTpsEl) {
+      fleetTpsEl.innerText = fleetTps > 0 ? `${fleetTps.toFixed(1)}/s` : '0.0/s';
+    }
+
+    // In-flight active question workers
+    const inFlightCount = states.reduce((acc, st) => acc + (st.in_flight || (st.active_question_id !== undefined && !st.is_finished && !st.is_failed ? 1 : 0)), 0);
+    const inFlightEl = document.getElementById('in-flight-stat');
+    if (inFlightEl) {
+      inFlightEl.innerText = inFlightCount;
+    }
+
     const totalTokens = states.reduce((acc, st) => acc + (st.total_tokens || 0), 0);
     document.getElementById('total-tokens-stat').innerText = totalTokens.toLocaleString();
 
@@ -954,7 +1093,9 @@
     const circumference = 201;
     card.querySelector('.gauge-fill').style.strokeDashoffset = circumference - (accFloat / 100 * circumference);
     card.querySelector('.gauge-text').innerText = accStr;
-    card.querySelector('.bench-label').innerText = st.current_benchmark_display || st.current_benchmark || 'Benchmarking';
+    const isActivelyProcessing = !isTerminal && (st.in_flight > 0 || (st.active_question_id !== null && st.active_question_id !== undefined));
+    const activeQText = isActivelyProcessing ? ` <span style="color:var(--accent-cyan); font-weight:700;">(⏳ Q#${(st.active_question_id || 0) + 1})</span>` : '';
+    card.querySelector('.bench-label').innerHTML = escapeHtml(st.current_benchmark_display || st.current_benchmark || 'Benchmarking') + activeQText;
     const statusKey = String(st.status || '').toLowerCase();
     const isTerminal = st.is_finished || st.is_failed || statusKey === 'completed' || statusKey === 'stopped' || statusKey === 'failed';
     card.querySelector('.q-counter').innerText = `${st.q_index}/${st.q_total} (${pct.toFixed(0)}%)`;
@@ -1045,16 +1186,29 @@
       if (liveMap.has(mname)) return; // Live model overrides saved model with same name during run
       const summary = (mdata && mdata.summary) ? mdata.summary : {};
       const score = (typeof summary.overall_score === 'number') ? summary.overall_score : null;
+      const isOutdated = !!(mdata && (mdata.outdated || (mdata.metadata && mdata.metadata.outdated)));
+      const completedCount = typeof summary.completed_benchmarks === 'number' ? summary.completed_benchmarks : (summary.completed || 0);
+      const totalExpected = typeof summary.total_benchmarks === 'number' ? summary.total_benchmarks : 12;
+      const isComplete = (completedCount >= totalExpected && totalExpected > 0);
+      const scoredText = isComplete ? `${totalExpected}/${totalExpected} Completed` : `${completedCount}/${totalExpected} Benches (Partial)`;
+
       combined.push({
         name: mname,
         id: (mdata && mdata.model_id) ? mdata.model_id : mname,
         thinking_effort: (mdata && mdata.thinking_effort) ? mdata.thinking_effort : null,
+        quantization: (mdata && (mdata.quantization || (mdata.metadata && mdata.metadata.quantization))) || null,
+        kv_quant: (mdata && (mdata.kv_quant || (mdata.metadata && mdata.metadata.kv_quant))) || null,
+        flash_attention: (mdata && (mdata.flash_attention !== undefined ? mdata.flash_attention : (mdata.metadata && mdata.metadata.flash_attention !== undefined ? mdata.metadata.flash_attention : null))),
+        outdated: isOutdated,
+        is_complete: isComplete,
+        completed_benchmarks: completedCount,
+        total_benchmarks: totalExpected,
         accuracy: score,
-        scored: 'Completed',
+        scored: scoredText,
         q_total: '—',
         total_tokens: summary.total_all_tokens || 0,
         avg_tps: summary.avg_tokens_per_second || null,
-        status: 'Saved',
+        status: isComplete ? 'Complete' : 'Partial',
         is_live: false,
         is_finished: true,
         is_failed: false,
@@ -1063,16 +1217,24 @@
 
     // 2. Add active live models from current run
     (states || []).forEach(st => {
+      const isComplete = st.is_finished && !st.is_failed && (st.scored != null && st.q_total != null && st.scored >= st.q_total && st.q_total > 0);
       combined.push({
         name: st.name,
         id: st.id,
         thinking_effort: st.thinking_effort || null,
+        quantization: st.quantization || null,
+        kv_quant: st.kv_quant || null,
+        flash_attention: st.flash_attention !== undefined ? st.flash_attention : null,
+        outdated: false,
+        is_complete: isComplete,
+        completed_benchmarks: Object.keys(st.benchmark_scores || {}).length,
+        total_benchmarks: 12,
         accuracy: st.accuracy,
         scored: st.scored != null ? `${st.scored}/${st.q_total}` : '0/0',
         q_total: st.q_total,
         total_tokens: st.total_tokens || 0,
         avg_tps: st.avg_tps,
-        status: st.status || (st.is_finished ? 'Finished' : 'Running'),
+        status: st.status || (st.is_finished ? (isComplete ? 'Complete' : 'Partial') : 'Running'),
         is_live: true,
         is_finished: !!st.is_finished,
         is_failed: !!st.is_failed,
@@ -1170,12 +1332,23 @@
 
       // Status badge
       let badgeHtml = '';
-      if (!st.is_live) {
-        badgeHtml = '<span class="status-badge saved">🏛️ Saved</span>';
+      if (st.outdated) {
+        const partialNote = !st.is_complete ? ` (${st.completed_benchmarks}/${st.total_benchmarks || 12} Benches)` : '';
+        badgeHtml = `<span class="status-badge" style="background:rgba(239,68,68,0.15); color:var(--accent-rose); border:1px solid rgba(239,68,68,0.3);" title="Run was performed before engine v2 update${partialNote}">⚠️ Outdated${partialNote}</span>`;
+      } else if (!st.is_live) {
+        if (!st.is_complete) {
+          badgeHtml = `<span class="status-badge" style="background:rgba(234,179,8,0.15); color:var(--accent-amber); border:1px solid rgba(234,179,8,0.3);" title="Partial run: only ${st.completed_benchmarks}/${st.total_benchmarks || 12} benchmarks completed">⚠️ Partial (${st.completed_benchmarks}/${st.total_benchmarks || 12})</span>`;
+        } else {
+          badgeHtml = '<span class="status-badge saved">🏛️ Complete</span>';
+        }
       } else if (st.is_failed) {
         badgeHtml = '<span class="status-badge failed">❌ Failed</span>';
       } else if (st.is_finished) {
-        badgeHtml = '<span class="status-badge finished">✅ Done</span>';
+        if (!st.is_complete) {
+          badgeHtml = `<span class="status-badge" style="background:rgba(234,179,8,0.15); color:var(--accent-amber); border:1px solid rgba(234,179,8,0.3);" title="Partial run: only ${st.completed_benchmarks}/${st.total_benchmarks || 12} benchmarks completed">⚠️ Partial (${st.completed_benchmarks}/${st.total_benchmarks || 12})</span>`;
+        } else {
+          badgeHtml = '<span class="status-badge finished">✅ Complete (12/12)</span>';
+        }
       } else {
         badgeHtml = '<span class="status-badge live">⚡ LIVE</span>';
       }
@@ -1184,13 +1357,26 @@
         ? `<span style="font-size:0.7rem; opacity:0.75; background:rgba(99,102,241,0.2); color:var(--accent-primary); padding:0.1rem 0.35rem; border-radius:4px; margin-left:0.35rem;" title="Thinking effort: ${st.thinking_effort}">🧠 ${st.thinking_effort}</span>`
         : '';
 
+      let metaBadges = '';
+      if (st.quantization) {
+        metaBadges += `<span class="meta-tag meta-quant" title="Model Quantization">📦 ${escapeHtml(st.quantization)}</span>`;
+      }
+      if (st.kv_quant) {
+        metaBadges += `<span class="meta-tag meta-kv" title="KV Cache Quantization">💾 KV: ${escapeHtml(st.kv_quant)}</span>`;
+      }
+      if (st.flash_attention !== null && st.flash_attention !== undefined) {
+        metaBadges += `<span class="meta-tag ${st.flash_attention ? 'meta-fa-on' : 'meta-fa-off'}" title="Flash Attention">${st.flash_attention ? '⚡ FA: On' : '⚡ FA: Off'}</span>`;
+      }
+      const metaRow = metaBadges ? `<div style="display:flex; flex-wrap:wrap; gap:0.25rem; margin-top:0.25rem;">${metaBadges}</div>` : '';
+
       row.innerHTML = `
         <td><strong style="${idx < 3 ? 'color:var(--accent-amber); font-size:0.95rem;' : ''}">${medals[idx] || (idx+1)+'th'}</strong></td>
         <td>
-          <div style="font-weight:700; display:flex; align-items:center;">
+          <div style="font-weight:700; display:flex; align-items:center; gap:0.25rem;">
             ${escapeHtml(st.name)}${thinkingBadge}
           </div>
           <div style="font-size:0.72rem; color:var(--text-dim); font-family:'JetBrains Mono', monospace;">${escapeHtml(st.id)}</div>
+          ${metaRow}
         </td>
         <td>
           <span style="color:${st.accuracy != null ? 'var(--accent-green)' : 'var(--text-dim)'}; font-weight:700;">${accPct}${accPct !== 'N/A' ? '%' : ''}</span>

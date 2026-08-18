@@ -96,6 +96,22 @@ def _completion_with_fallback(kwargs: dict[str, Any]) -> Any:
             kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
             dropped.append("max_tokens->max_completion_tokens")
         if not dropped:
+            # Check for context size exceeded error and auto-reduce max_tokens
+            if any(h in msg for h in ("context size has been exceeded", "context_length_exceeded", "maximum context length", "context_length")):
+                curr_max = kwargs.get("max_tokens") or kwargs.get("max_completion_tokens") or 0
+                if curr_max > 512:
+                    clamped_max = max(512, int(curr_max * 0.5))
+                    if "max_tokens" in kwargs:
+                        kwargs["max_tokens"] = clamped_max
+                    else:
+                        kwargs["max_completion_tokens"] = clamped_max
+                    console.print(f"[yellow]Context size exceeded; auto-clamping max_tokens to {clamped_max} and retrying.[/yellow]")
+                    log.warning(f"Context size exceeded for {kwargs.get('model')}; auto-clamped max_tokens to {clamped_max}")
+                    try:
+                        return litellm.completion(**kwargs)
+                    except Exception as e_ctx:
+                        raise _sanitize(e_ctx) from None
+
             # The error looks parameter-related but names nothing we recognize;
             # shed the most-likely-optional field rather than fail the question.
             if "reasoning_effort" in kwargs:
@@ -255,11 +271,11 @@ def generate(model: ModelConfig | str, prompt: str, settings: Settings) -> Gener
         output_tokens = completion_tokens
     total_tokens = int(getattr(usage, "total_tokens", 0) or (input_tokens + completion_tokens))
 
-    # Speed metrics — skip for local models (hardware-dependent)
-    time_ms = None if local else elapsed_ms
+    # Speed metrics — calculate time and TPS for all models (remote and local)
+    time_ms = elapsed_ms
     tps = None
-    if not local and elapsed_ms > 0 and completion_tokens > 0:
-        tps = completion_tokens / (elapsed_ms / 1000)
+    if elapsed_ms > 0 and completion_tokens > 0:
+        tps = round(completion_tokens / (elapsed_ms / 1000), 1)
 
     # Cost calculation via LiteLLM
     cost_usd = None

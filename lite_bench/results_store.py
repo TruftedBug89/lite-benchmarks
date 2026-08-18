@@ -114,9 +114,16 @@ def aggregate(mdata: dict, config: Config) -> None:
     }
     overall = config.overall_score(bench_scores)
 
+    total_expected = len(enabled_names)
+    completed_count = len(bench_scores)
+    is_complete = (completed_count == total_expected and total_expected > 0)
+
     summary: dict = {
         "overall_score": round(overall, 4) if overall is not None else None,
-        "completed_benchmarks": len(bench_scores),
+        "completed_benchmarks": completed_count,
+        "total_benchmarks": total_expected,
+        "is_complete": is_complete,
+        "completion_status": "complete" if is_complete else f"partial ({completed_count}/{total_expected})",
         "total_input_tokens": sum((r.get("input_tokens") or 0) for r in attempted),
         "total_output_tokens": sum((r.get("output_tokens") or 0) for r in attempted),
         "total_thinking_tokens": sum((r.get("thinking_tokens") or 0) for r in attempted),
@@ -268,13 +275,22 @@ def append_run_history(results: dict, config: Config, results_dir: str = "result
                 if k in enabled_names and isinstance(mdata[k], dict) and isinstance(mdata[k].get("score"), (int, float)):
                     bench_scores[k] = mdata[k]["score"]
             summary = mdata.get("summary", {})
-            overall = summary.get("overall_score")
-            if overall is None and bench_scores:
-                overall = config.overall_score(bench_scores)
-            models_snapshot[mname] = {
+            entry_snap = {
                 "overall_score": round(overall, 4) if overall is not None else None,
+                "completed_benchmarks": len(bench_scores),
+                "total_benchmarks": len(enabled_names),
+                "is_complete": (len(bench_scores) == len(enabled_names) and len(enabled_names) > 0),
                 "benchmarks": {k: round(v, 4) for k, v in bench_scores.items()},
             }
+            if mdata.get("quantization"):
+                entry_snap["quantization"] = mdata["quantization"]
+            if mdata.get("kv_quant"):
+                entry_snap["kv_quant"] = mdata["kv_quant"]
+            if mdata.get("flash_attention") is not None:
+                entry_snap["flash_attention"] = mdata["flash_attention"]
+            if mdata.get("outdated"):
+                entry_snap["outdated"] = True
+            models_snapshot[mname] = entry_snap
 
         if not models_snapshot:
             return
@@ -362,7 +378,7 @@ def load_latest_results(config: Config, path: str | Path = "results/latest.json"
             continue
         cleaned_mdata: dict = {}
         for k, v in mdata.items():
-            if k in ("model_id", "thinking_effort", "summary"):
+            if k in ("model_id", "thinking_effort", "summary", "quantization", "kv_quant", "flash_attention", "outdated", "metadata"):
                 cleaned_mdata[k] = v
             elif k in all_benchmarks:
                 cleaned_mdata[k] = v

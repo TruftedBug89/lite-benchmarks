@@ -33,7 +33,12 @@ from lite_bench.charts import generate_all as generate_charts
 from lite_bench.config import Config, ModelConfig, Settings, load_config
 from lite_bench.engine import DefaultEngineCallbacks, run_engine
 from lite_bench.logging_utils import get_logger, log_ref, open_run_log, scrub
-from lite_bench.metadata import BENCHMARK_INFO, CATEGORY_ICONS, CATEGORY_LABELS
+from lite_bench.metadata import (
+    BENCHMARK_INFO,
+    CATEGORY_ICONS,
+    CATEGORY_LABELS,
+    detect_local_model_metadata,
+)
 from lite_bench.readme_gen import write_readme
 from lite_bench.results_store import append_run_history, load_latest_results, load_run_history
 from refresh_site import refresh_site
@@ -139,9 +144,14 @@ class LiveModelState:
     id: str
     name: str
     thinking_effort: str | None = None
+    quantization: str | None = None
+    kv_quant: str | None = None
+    flash_attention: bool | None = None
     status: str = "Idle"
     current_benchmark: str = ""
     current_benchmark_display: str = ""
+    active_question_id: int | None = None
+    in_flight: int = 0
     q_index: int = 0
     q_total: int = 0
     correct: float = 0.0
@@ -202,6 +212,21 @@ class EngineCallbacksBridge(DefaultEngineCallbacks):
                 state.current_benchmark_display = info.get("display", bench_name)
                 state.status = "Running"
 
+    def on_question_start(self, model_name: str, bench_name: str, question_id: int, total_questions: int) -> None:
+        if self.engine._run_id != self._run_id:
+            return
+        with self.engine.state_lock:
+            state = self.engine.states.get(model_name)
+            if state:
+                state.current_benchmark = bench_name
+                info = BENCHMARK_INFO.get(bench_name, {})
+                state.current_benchmark_display = info.get("display", bench_name)
+                state.active_question_id = question_id
+                state.in_flight += 1
+                state.status = "Running"
+                disp = state.current_benchmark_display or bench_name
+                self.engine._log_locked(f"[{model_name}] ⏳ Q#{question_id + 1}/{total_questions} ({disp}): Generating response...")
+
     def on_question_retry(self, model_name: str, bench_name: str, info: dict) -> None:
         if self.engine._run_id != self._run_id:
             return
@@ -234,6 +259,8 @@ class EngineCallbacksBridge(DefaultEngineCallbacks):
             state.current_benchmark = bench_name
             info = BENCHMARK_INFO.get(bench_name, {})
             state.current_benchmark_display = info.get("display", bench_name)
+            if state.in_flight > 0:
+                state.in_flight -= 1
 
             qi = detail.get("question_id", 0)
             status = detail.get("status", "error")
@@ -420,11 +447,20 @@ class DashboardEngine:
         # attacker-controlled ``api_base``.
         registry: dict[str, dict] = {}
         for cm in base_config.models:
-            registry[cm.id] = {"api_base": cm.api_base, "api_key_env": cm.api_key_env}
+            registry[cm.id] = {
+                "api_base": cm.api_base,
+                "api_key_env": cm.api_key_env,
+                "quantization": cm.quantization,
+                "kv_quant": cm.kv_quant,
+                "flash_attention": cm.flash_attention,
+            }
         for cm in load_custom_models():
             registry[str(cm.get("id", ""))] = {
                 "api_base": cm.get("api_base"),
                 "api_key_env": cm.get("api_key_env"),
+                "quantization": cm.get("quantization") or cm.get("quant"),
+                "kv_quant": cm.get("kv_quant"),
+                "flash_attention": cm.get("flash_attention"),
             }
 
         models_data = run_payload.get("models", [])
@@ -435,8 +471,22 @@ class DashboardEngine:
             thinking_effort = m.get("thinking_effort")
             max_tokens = m.get("max_tokens")
             source = registry.get(mid, {})
-            api_base = source.get("api_base")
-            api_key_env = source.get("api_key_env")
+            api_base = source.get("api_base") or m.get("api_base")
+            api_key_env = source.get("api_key_env") or m.get("api_key_env")
+            quantization = m.get("quantization") or source.get("quantization")
+            kv_quant = m.get("kv_quant") or source.get("kv_quant")
+            flash_attn = m.get("flash_attention") if m.get("flash_attention") is not None else source.get("flash_attention")
+
+            # Detect metadata if local model
+            meta = detect_local_model_metadata(
+                model_id=mid,
+                model_name=name,
+                api_base=api_base,
+                explicit_quant=quantization,
+                explicit_kv_quant=kv_quant,
+                explicit_flash_attn=flash_attn,
+            )
+
             try:
                 max_tokens_val = int(max_tokens) if max_tokens else None
             except (TypeError, ValueError):
@@ -450,6 +500,9 @@ class DashboardEngine:
                     max_tokens=max_tokens_val,
                     api_base=api_base if api_base else None,
                     api_key_env=api_key_env if api_key_env else None,
+                    quantization=meta.get("quantization"),
+                    kv_quant=meta.get("kv_quant"),
+                    flash_attention=meta.get("flash_attention"),
                     extra_params={},
                 )
             )
@@ -479,15 +532,7 @@ class DashboardEngine:
         # Check unsafe code execution policy
         allow_unsafe_requested = bool(user_settings.get("allow_unsafe_code_execution", False))
         allow_unsafe_env = _env_truthy("LITE_BENCH_ALLOW_UNSAFE")
-        allow_unsafe = allow_unsafe_requested and allow_unsafe_env
-
-        if allow_unsafe_requested and not allow_unsafe_env:
-            self.log(
-                "⚠️ Code-execution benchmarks requested but LITE_BENCH_ALLOW_UNSAFE is not "
-                "set in the SERVER's environment. Set it before launching web_app.py "
-                "(or add LITE_BENCH_ALLOW_UNSAFE=1 to a .env file next to it) and restart. "
-                "Code-execution benchmarks will be skipped."
-            )
+        allow_unsafe = allow_unsafe_requested or allow_unsafe_env or bool(base_config.settings.allow_unsafe_code_execution)
 
         settings = Settings(
             seed=base_config.settings.seed,
@@ -544,6 +589,9 @@ class DashboardEngine:
                     id=m.id,
                     name=m.name,
                     thinking_effort=m.thinking_effort,
+                    quantization=m.quantization,
+                    kv_quant=m.kv_quant,
+                    flash_attention=m.flash_attention,
                     status="Queued",
                 )
 
@@ -946,18 +994,37 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 models = load_custom_models()
                 action = payload.get("action", "add")
                 if action == "add":
+                    mid = payload.get("id", "").strip()
+                    mname = payload.get("name", "").strip() or mid
+                    api_base = payload.get("api_base") or None
+                    quant = payload.get("quantization") or payload.get("quant") or None
+                    kv_q = payload.get("kv_quant") or None
+                    fa = payload.get("flash_attention")
+
+                    # Auto-detect if missing
+                    meta = detect_local_model_metadata(
+                        model_id=mid,
+                        model_name=mname,
+                        api_base=api_base,
+                        explicit_quant=quant,
+                        explicit_kv_quant=kv_q,
+                        explicit_flash_attn=fa,
+                    )
+
                     model_entry = {
-                        "id": payload.get("id", "").strip(),
-                        "name": payload.get("name", "").strip(),
+                        "id": mid,
+                        "name": mname,
                         "thinking_effort": payload.get("thinking_effort") or None,
-                        "api_base": payload.get("api_base") or None,
+                        "max_tokens": payload.get("max_tokens") or 16384,
+                        "quantization": meta.get("quantization"),
+                        "kv_quant": meta.get("kv_quant"),
+                        "flash_attention": meta.get("flash_attention"),
+                        "api_base": api_base,
                         "api_key_env": payload.get("api_key_env") or None,
                     }
                     if not model_entry["id"]:
                         self._send_json({"error": "Model ID is required."}, status=400)
                         return
-                    if not model_entry["name"]:
-                        model_entry["name"] = model_entry["id"]
                     models = [m for m in models if m["id"] != model_entry["id"]]
                     models.append(model_entry)
                     save_custom_models(models)

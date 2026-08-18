@@ -55,8 +55,11 @@ def load_questions(
     if token:
         kwargs["token"] = token
 
+    import warnings
     try:
-        ds = load_dataset(**kwargs)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=SyntaxWarning)
+            ds = load_dataset(**kwargs)
     except Exception as e:
         if "gated" in str(e).lower() or "401" in str(e) or "token" in str(e).lower():
             log.warning(

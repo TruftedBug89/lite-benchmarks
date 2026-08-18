@@ -1,0 +1,57 @@
+[
+  {
+    "id": "lm_studio/g9v3-3b-i1",
+    "name": "G9v3 3B i1 (Local LM Studio)",
+    "thinking_effort": null,
+    "max_tokens": 16384,
+    "quantization": "Q6_K",
+    "kv_quant": "q8_0",
+    "flash_attention": true,
+    "api_base": "http://localhost:1234/v1",
+    "api_key_env": null
+  },
+  {
+    "id": "lm_studio/google/gemma-4-e4b",
+    "name": "Gemma 4 E4B (Local LM Studio)",
+    "thinking_effort": null,
+    "max_tokens": 16384,
+    "quantization": "Q4_K_M",
+    "kv_quant": "q8_0",
+    "flash_attention": true,
+    "api_base": "http://localhost:1234/v1",
+    "api_key_env": null
+  },
+  {
+    "id": "lm_studio/prism-ml/bonsai-27b",
+    "name": "Bonsai 27B (Local LM Studio)",
+    "thinking_effort": null,
+    "max_tokens": 16384,
+    "quantization": "Q1_0",
+    "kv_quant": "q8_0",
+    "flash_attention": true,
+    "api_base": "http://localhost:1234/v1",
+    "api_key_env": null
+  },
+  {
+    "id": "lm_studio/qwen3.5-4b-uncensored-hauhaucs-aggressive",
+    "name": "Qwen 3.5 4B Uncensored (Local LM Studio)",
+    "thinking_effort": null,
+    "max_tokens": 16384,
+    "quantization": "Q4_K_M",
+    "kv_quant": "q8_0",
+    "flash_attention": true,
+    "api_base": "http://localhost:1234/v1",
+    "api_key_env": null
+  },
+  {
+    "id": "lm_studio/qwen3.8-9b",
+    "name": "Qwen 3.8 9B (Local LM Studio)",
+    "thinking_effort": null,
+    "max_tokens": 16384,
+    "quantization": "Q4_K_M",
+    "kv_quant": "q8_0",
+    "flash_attention": true,
+    "api_base": "http://localhost:1234/v1",
+    "api_key_env": null
+  }
+]
